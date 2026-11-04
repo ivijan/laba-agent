@@ -6,6 +6,7 @@ import {
   toUIMessageStream,
   type UIMessage,
 } from 'ai';
+import { authConfigured, isValidSession, SESSION_COOKIE } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
@@ -31,6 +32,9 @@ function getPublicStreamError(error: unknown): string {
   return 'Nie udalo sie uzyskac odpowiedzi z OpenRouter. Sprobuj ponownie lub sprawdz log serwera.';
 }
 export async function POST(request: Request) {
+  const cookieHeader = request.headers.get('cookie') || '';
+  const session = cookieHeader.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${SESSION_COOKIE}=`))?.slice(SESSION_COOKIE.length + 1);
+  if (!authConfigured() || !isValidSession(session)) return Response.json({ error: 'Wymagane logowanie.' }, { status: 401 });
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   const model = process.env.OPENROUTER_MODEL?.trim();
 

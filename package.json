@@ -1,0 +1,22 @@
+{
+  "name": "laba-chatbot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev"
+  },
+  "dependencies": {
+    "@ai-sdk/react": "^4.0.166",
+    "@openrouter/ai-sdk-provider": "^3.1.0",
+    "ai": "^7.0.162",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest"
+  }
+}

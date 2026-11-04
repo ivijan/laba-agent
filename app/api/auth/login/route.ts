@@ -1,6 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
 import { authConfigured, createSession, SESSION_COOKIE, SESSION_SECONDS } from '@/lib/auth';
-import { checkLoginLimit } from '@/lib/login-rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -10,10 +9,6 @@ export async function POST(request: Request) {
   try { password = (await request.json()).password; }
   catch { return Response.json({ error: 'Nieprawidłowe żądanie.' }, { status: 400 }); }
   if (typeof password !== 'string') return Response.json({ error: 'Nieprawidłowe żądanie.' }, { status: 400 });
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  const limit = await checkLoginLimit(ip);
-  if (!limit.allowed) return Response.json({ error: 'Za dużo prób. Spróbuj później.' }, { status: 429, headers: { 'Retry-After': String(limit.retryAfter) } });
-
   const expected = process.env.CHAT_PASSWORD!;
   const suppliedBytes = Buffer.from(password);
   const expectedBytes = Buffer.from(expected);

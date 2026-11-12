@@ -7,6 +7,7 @@ import {
   type UIMessage,
 } from 'ai';
 import { authConfigured, isValidSession, SESSION_COOKIE } from '@/lib/auth';
+import { STUDIO_NOVA_SYSTEM_PROMPT } from '@/lib/studio-nova-prompt';
 
 export const runtime = 'nodejs';
 
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
   try {
     const result = streamText({
       model: createOpenRouter({ apiKey })(model),
+      system: STUDIO_NOVA_SYSTEM_PROMPT,
       messages: await convertToModelMessages(messages),
     });
 

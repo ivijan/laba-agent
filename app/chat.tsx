@@ -4,6 +4,24 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { type FormEvent, useState } from 'react';
 
+type AnalysisResult = {
+  category: 'sales' | 'support' | 'billing' | 'unknown';
+  priority: 'normal' | 'high';
+  draft: string;
+  needs_review: boolean;
+};
+
+function isAnalysisResult(value: unknown): value is AnalysisResult {
+  if (typeof value !== 'object' || value === null) return false;
+  const result = value as Record<string, unknown>;
+  return (
+    ['sales', 'support', 'billing', 'unknown'].includes(String(result.category)) &&
+    ['normal', 'high'].includes(String(result.priority)) &&
+    typeof result.draft === 'string' &&
+    typeof result.needs_review === 'boolean'
+  );
+}
+
 function readableError(message: string): string {
   try { const parsed: unknown = JSON.parse(message); if (typeof parsed === 'object' && parsed !== null && 'error' in parsed && typeof parsed.error === 'string') return parsed.error; }
   catch { /* SDK can return plain text */ }
@@ -13,9 +31,38 @@ function readableError(message: string): string {
 export default function Chat() {
   const { messages, sendMessage, status, error } = useChat({ transport: new DefaultChatTransport({ api: '/api/chat' }) });
   const [input, setInput] = useState('');
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [analysisError, setAnalysisError] = useState('');
+  const [analysisBusy, setAnalysisBusy] = useState(false);
   const isBusy = status === 'submitted' || status === 'streaming';
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const text = input.trim(); if (!text || isBusy) return; sendMessage({ text }); setInput('');
+    event.preventDefault(); const text = input.trim(); if (!text || isBusy || analysisBusy) return; sendMessage({ text }); setInput('');
+  }
+  async function handleAnalyze() {
+    const text = input.trim();
+    if (!text || isBusy || analysisBusy) return;
+    setAnalysis(null); setAnalysisError(''); setAnalysisBusy(true);
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const errorValue = typeof payload === 'object' && payload !== null && 'error' in payload ? payload.error : null;
+        const message = typeof errorValue === 'object' && errorValue !== null && 'message' in errorValue && typeof errorValue.message === 'string'
+          ? errorValue.message
+          : 'Nie udało się przeanalizować wiadomości.';
+        throw new Error(message);
+      }
+      if (!isAnalysisResult(payload)) throw new Error('Serwer zwrócił wynik w nieprawidłowym formacie.');
+      setAnalysis(payload);
+    } catch (caught) {
+      setAnalysisError(caught instanceof Error ? caught.message : 'Nie udało się przeanalizować wiadomości.');
+    } finally {
+      setAnalysisBusy(false);
+    }
   }
   async function logout() { await fetch('/api/auth/logout', { method: 'POST' }); window.location.reload(); }
   return (
@@ -24,8 +71,19 @@ export default function Chat() {
       <section className="conversation" aria-label="Rozmowa" aria-live="polite">
         {messages.length === 0 ? <div className="empty-state"><div className="empty-icon" aria-hidden="true">&#10035;</div><h2>W czym mog&#281; pom&#243;c?</h2><p>Napisz wiadomo&#347;&#263;, aby rozpocz&#261;&#263; rozmow&#281;.</p></div> : <div className="message-list">{messages.map((message) => <article className={`message ${message.role === 'user' ? 'message-user' : 'message-assistant'}`} key={message.id}><span className="message-author">{message.role === 'user' ? 'Ty' : 'Asystent'}</span><div className="message-bubble">{message.parts.map((part, index) => part.type === 'text' ? <p key={`${message.id}-${index}`}>{part.text}</p> : null)}</div></article>)}{isBusy && <div className="working-state" role="status"><span className="typing-dots"><i /><i /><i /></span>{status === 'submitted' ? 'Wysyłanie wiadomości...' : 'Asystent pisze...'}</div>}</div>}
       </section>
+      {analysisBusy && <p className="working-state analysis-working" role="status"><span className="typing-dots"><i /><i /><i /></span>Analizuję wiadomość...</p>}
+      {analysisError && <p className="error-message" role="alert">{analysisError}</p>}
+      {analysis && <section className="analysis-result" aria-live="polite" aria-label="Wynik analizy">
+        <div className="analysis-title"><h2>Analiza wiadomości</h2><span className={analysis.needs_review ? 'review-badge' : 'review-badge review-ok'}>{analysis.needs_review ? 'Wymaga sprawdzenia' : 'Bez dodatkowego sprawdzenia'}</span></div>
+        <dl>
+          <div><dt>Kategoria</dt><dd>{analysis.category}</dd></div>
+          <div><dt>Priorytet</dt><dd>{analysis.priority}</dd></div>
+          <div className="analysis-draft"><dt>Szkic odpowiedzi</dt><dd>{analysis.draft}</dd></div>
+          <div><dt>Status sprawdzenia</dt><dd>{analysis.needs_review ? 'needs_review = true' : 'needs_review = false'}</dd></div>
+        </dl>
+      </section>}
       {error && <p className="error-message" role="alert">{readableError(error.message)}</p>}
-      <form className="message-form" onSubmit={handleSubmit}><label className="sr-only" htmlFor="chat-message">Wiadomo&#347;&#263;</label><input id="chat-message" autoComplete="off" value={input} onChange={(event) => setInput(event.target.value)} disabled={isBusy} placeholder="Napisz wiadomość..."/><button type="submit" disabled={isBusy || !input.trim()} aria-label="Wyślij wiadomość">{isBusy ? <span className="send-spinner" aria-hidden="true" /> : <span aria-hidden="true">&#8593;</span>}</button></form>
+      <form className="message-form" onSubmit={handleSubmit}><label className="sr-only" htmlFor="chat-message">Wiadomo&#347;&#263;</label><input id="chat-message" autoComplete="off" value={input} onChange={(event) => setInput(event.target.value)} disabled={isBusy || analysisBusy} placeholder="Napisz wiadomość..."/><button className="analyze-button" type="button" onClick={handleAnalyze} disabled={isBusy || analysisBusy || !input.trim()}>{analysisBusy ? 'Analizuję…' : 'Analizuj'}</button><button className="send-button" type="submit" disabled={isBusy || analysisBusy || !input.trim()} aria-label="Wyślij wiadomość">{isBusy ? <span className="send-spinner" aria-hidden="true" /> : <span aria-hidden="true">&#8593;</span>}</button></form>
       <p className="privacy-note">Odpowiedzi s&#261; generowane przez AI i mog&#261; zawiera&#263; b&#322;&#281;dy.</p>
     </main>
   );

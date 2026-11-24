@@ -53,6 +53,76 @@ export async function POST(req: Request) {
           }).format(new Date())} (Europe/Warsaw)`,
         }),
       }),
+      disneyPlus: tool({
+        description:
+          "Wyszukaj w publicznym Disney API postacie powiązane z podanym tytułem filmu. Używaj, gdy pytanie dotyczy filmu Disneya i jego postaci. To API zawiera dane o postaciach i listach filmów, nie zawiera opisów filmów ani informacji o dostępności w serwisie Disney+.",
+        inputSchema: z.object({
+          title: z.string().min(1).describe("Tytuł filmu Disney, którego szukamy"),
+        }),
+        execute: async ({ title }) => {
+          const retrievedAt = new Date().toISOString();
+          const unavailableMessage =
+            "Nie udało się teraz pobrać danych z Disney API. Spróbuj ponownie za chwilę.";
+
+          try {
+            const query =
+              "query($title: String!) { characters(filter: { films: $title }) { items { name films } } }";
+            const url = new URL("https://api.disneyapi.dev/graphql");
+            url.searchParams.set("query", query);
+            url.searchParams.set("variables", JSON.stringify({ title }));
+
+            const response = await fetch(url, {
+              method: "GET",
+              cache: "no-store",
+              signal: AbortSignal.timeout(10_000),
+            });
+
+            if (!response.ok) {
+              return { title, characters: [], retrievedAt, message: unavailableMessage };
+            }
+
+            const payload = (await response.json()) as {
+              data?: {
+                characters?: {
+                  items?: Array<{ name?: unknown; films?: unknown }>;
+                };
+              };
+              errors?: unknown[];
+            };
+
+            const items = payload.data?.characters?.items;
+            if (payload.errors?.length || !items) {
+              return { title, characters: [], retrievedAt, message: unavailableMessage };
+            }
+
+            const normalizedTitle = title.trim().toLocaleLowerCase("pl-PL");
+            const characters = items
+              .map((item) => ({
+                name: typeof item.name === "string" ? item.name : "",
+                films: Array.isArray(item.films)
+                  ? item.films.filter(
+                      (film): film is string =>
+                        typeof film === "string" &&
+                        film.trim().toLocaleLowerCase("pl-PL") === normalizedTitle,
+                    )
+                  : [],
+              }))
+              .filter((item) => item.name && item.films.length > 0)
+              .slice(0, 10);
+
+            return {
+              title,
+              characters,
+              retrievedAt,
+              ...(characters.length === 0
+                ? { message: "Nie znaleziono postaci powiązanych z tym tytułem w Disney API." }
+                : {}),
+            };
+          } catch {
+            return { title, characters: [], retrievedAt, message: unavailableMessage };
+          }
+        },
+      }),
     },
     stopWhen: isStepCount(5),
   });

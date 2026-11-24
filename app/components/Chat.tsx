@@ -78,7 +78,11 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
                 <div className="tool-labels" aria-label="Użyte narzędzia">
                   {toolNames.map((name) => (
                     <span className="tool-label" key={name}>
-                      {name === "webSearch" ? "wyszukiwanie" : name}
+                      {name === "webSearch"
+                        ? "wyszukiwanie"
+                        : name === "disneyPlus"
+                          ? "Disney+"
+                          : name}
                     </span>
                   ))}
                 </div>

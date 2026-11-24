@@ -3,7 +3,10 @@ import { z } from "zod";
 import { IMAGE_MODEL_ID, MODEL_ID, imageModel, webSearchTool } from "@/lib/model";
 
 // Narzędzia agenta. Opisy podpowiadają modelowi, kiedy warto ich użyć.
-export const MAX_STEPS = 6;
+export const MAX_STEPS = 2;
+export const MAX_TOOL_CALLS = 16;
+export const MAX_TASK_DURATION_MS = 60_000;
+export const MAX_TOOL_DURATION_MS = 10_000;
 export const MAX_IMAGE_PROMPT = 500;
 
 const TOOL_NAMES = [
@@ -31,6 +34,10 @@ export type AgentMetadata = {
   model?: string;
   fetchedAt?: string;
   stoppedAtLimit?: boolean;
+  stoppedAtToolLimit?: boolean;
+  timedOut?: boolean;
+  toolCallCount?: number;
+  elapsedMs?: number;
   steps?: Array<{ number: number; tools: string[] }>;
 };
 
@@ -42,21 +49,21 @@ function pobrano(): string {
   });
 }
 
-type FetchResult<T> = { ok: true; data: T } | { ok: false; status?: number };
+type FetchResult<T> = { ok: true; data: T } | { ok: false; status?: number; timedOut?: boolean };
 
 async function pobierzJson<T>(url: string, headers?: HeadersInit): Promise<FetchResult<T>> {
   try {
     const response = await fetch(url, {
       cache: "no-store",
       headers,
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(9_000),
     });
     if (!response.ok) return { ok: false, status: response.status };
     const data: unknown = await response.json();
     if (data === null || typeof data !== "object") return { ok: false, status: 502 };
     return { ok: true, data: data as T };
-  } catch {
-    return { ok: false };
+  } catch (error) {
+    return { ok: false, timedOut: error instanceof Error && error.name === "TimeoutError" };
   }
 }
 
@@ -69,7 +76,12 @@ function prawidlowaData(data: string): boolean {
 // Wspólna funkcja: używa jej endpoint /api/image oraz narzędzie generujObraz.
 export async function createImage(prompt: string): Promise<ImageResult> {
   try {
-    const result = await generateImage({ model: imageModel(), prompt });
+    const result = await generateImage({
+      model: imageModel(),
+      prompt,
+      abortSignal: AbortSignal.timeout(9_000),
+      maxRetries: 0,
+    });
     return {
       image: `data:${result.image.mediaType};base64,${result.image.base64}`,
       model: result.calls[0]?.response.modelId,
@@ -77,7 +89,7 @@ export async function createImage(prompt: string): Promise<ImageResult> {
     };
   } catch {
     return {
-      error: "Nie udało się wygenerować obrazu. Model obrazów może być teraz niedostępny — spróbuj za chwilę.",
+      error: "Źródło nie odpowiada albo nie udało się wygenerować obrazu. Spróbuj ponownie później.",
       pobrano: pobrano(),
     };
   }
@@ -109,7 +121,7 @@ const pogoda = tool({
       }>;
     }>(geocodeUrl.toString());
     if (!geocode.ok) {
-      return { error: "Nie udało się połączyć z wyszukiwarką miast Open-Meteo. Spróbuj ponownie za chwilę.", pobrano: pobranoO };
+      return { error: "Źródło nie odpowiada (Open-Meteo). Nie udało się sprawdzić miasta.", pobrano: pobranoO };
     }
 
     const miejsce = geocode.data.results?.[0];
@@ -137,7 +149,7 @@ const pogoda = tool({
     if (!forecast.ok) {
       const error = forecast.status === 400 || forecast.status === 404
         ? "Brak prognozy dla tego dnia. Open-Meteo udostępnia prognozę do 16 dni naprzód."
-        : "Serwis pogodowy Open-Meteo nie odpowiada. Spróbuj ponownie za chwilę.";
+        : "Źródło nie odpowiada (Open-Meteo). Nie udało się sprawdzić prognozy.";
       return { error, pobrano: pobranoO };
     }
 
@@ -233,7 +245,7 @@ const mapa = tool({
       results?: Array<{ name: string; country?: string; admin1?: string; latitude: number; longitude: number }>;
     }>(geocodeUrl.toString());
     if (!geocode.ok) {
-      return { error: "Nie udało się wyszukać miasta. Spróbuj ponownie za chwilę.", pobrano: pobranoO };
+      return { error: "Źródło nie odpowiada (Open-Meteo). Nie udało się sprawdzić miasta.", pobrano: pobranoO };
     }
     const miejsce = geocode.data.results?.[0];
     if (!miejsce || !Number.isFinite(miejsce.latitude) || !Number.isFinite(miejsce.longitude)) {
@@ -251,7 +263,7 @@ const mapa = tool({
         cache: "no-store",
         headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", Accept: "application/json" },
         body: new URLSearchParams({ data: query }),
-        signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(9_000),
       });
       if (!response.ok) overpass = { ok: false, status: response.status };
       else {
@@ -266,7 +278,7 @@ const mapa = tool({
     if (!overpass.ok) {
       const error = overpass.status === 429
         ? "Mapa jest chwilowo mocno obciążona. Spróbuj ponownie za około 30 sekund."
-        : "Serwis mapy OpenStreetMap nie odpowiada. Spróbuj ponownie za chwilę.";
+        : "Źródło nie odpowiada (OpenStreetMap). Nie udało się sprawdzić miejsc.";
       return { error, pobrano: pobranoO };
     }
     if (!Array.isArray(overpass.data.elements)) {
@@ -331,7 +343,7 @@ const waluty = tool({
     if (!result.ok) {
       const error = result.status === 404
         ? `NBP nie ma aktualnego kursu waluty ${kod}. Sprawdź kod albo wybierz walutę publikowaną w tabeli A.`
-        : "Serwis kursów walut NBP nie odpowiada. Spróbuj ponownie za chwilę.";
+        : "Źródło nie odpowiada (NBP). Nie udało się sprawdzić kursu.";
       return { error, pobrano: pobranoO };
     }
     const kurs = result.data.rates?.[0];
@@ -373,7 +385,7 @@ const swieta = tool({
     if (!result.ok) {
       const error = result.status === 404
         ? `Nie znaleziono danych świątecznych dla kraju ${kod} i roku ${rok}. Sprawdź kod kraju.`
-        : "Serwis Nager.Date nie odpowiada. Spróbuj ponownie za chwilę.";
+        : "Źródło nie odpowiada (Nager.Date). Nie udało się sprawdzić dni wolnych.";
       return { error, pobrano: pobranoO };
     }
     if (!Array.isArray(result.data)) return { error: "Serwis Nager.Date zwrócił nieprawidłową listę świąt.", pobrano: pobranoO };
@@ -413,7 +425,7 @@ const wikipedia = tool({
     if (!result.ok) {
       const error = result.status === 404
         ? `Nie znalazłem hasła „${haslo}” w polskiej Wikipedii.`
-        : "Polska Wikipedia nie odpowiada. Spróbuj ponownie za chwilę.";
+        : "Źródło nie odpowiada (Wikipedia). Nie udało się sprawdzić hasła.";
       return { error, pobrano: pobranoO };
     }
     const artykul = result.data;
@@ -520,6 +532,9 @@ const diagnostyka = tool({
     modelObrazow: IMAGE_MODEL_ID,
     narzedzia: TOOL_NAMES,
     limitKrokow: MAX_STEPS,
+    limitWywolanNarzedzi: MAX_TOOL_CALLS,
+    limitCzasuZadaniaSekundy: MAX_TASK_DURATION_MS / 1000,
+    limitCzasuNarzedziaSekundy: MAX_TOOL_DURATION_MS / 1000,
     zmienneSrodowiskowe: {
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? "tak" : "nie",
       CHAT_PASSWORD: process.env.CHAT_PASSWORD ? "tak" : "nie",
@@ -542,3 +557,33 @@ export const agentTools = {
   diagnostyka,
   generujObraz,
 };
+
+export function createTaskAgentTools(counter: { count: number }) {
+  const localToolNames = new Set<string>();
+  const tools = Object.fromEntries(
+    Object.entries(agentTools).map(([name, definition]) => {
+      const executable = definition as unknown as {
+        execute?: (...args: unknown[]) => Promise<unknown>;
+      };
+      if (typeof executable.execute !== "function") return [name, definition];
+
+      localToolNames.add(name);
+      const execute = executable.execute;
+      return [name, {
+        ...definition,
+        execute: async (...args: unknown[]) => {
+          if (counter.count >= MAX_TOOL_CALLS) {
+            return { error: `Osiągnięto limit ${MAX_TOOL_CALLS} wywołań narzędzi.` };
+          }
+          counter.count += 1;
+          try {
+            return await execute(...args);
+          } catch {
+            return { error: "Nie udało się wykonać narzędzia. Podam wynik częściowy." };
+          }
+        },
+      }];
+    }),
+  ) as typeof agentTools;
+  return { tools, localToolNames };
+}

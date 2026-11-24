@@ -47,6 +47,7 @@ Narzędzia:
 - Diagnostyka: używaj, gdy użytkownik pyta o model, narzędzia, limit kroków lub stan konfiguracji. Przekazuj wyłącznie statusy tak/nie; nigdy nie ujawniaj wartości sekretów.
 - Gdy ktoś prosi o grafikę lub obraz — użyj narzędzia generujObraz i napisz jedno zdanie o tym, co przedstawia obraz.
 - Przy zadaniu złożonym pracuj krok po kroku: użyj narzędzia, przeczytaj wynik i dopiero wtedy zdecyduj o następnym kroku. Nie zgaduj danych, które możesz sprawdzić.
+- Jeśli narzędzie zgłosi błąd albo źródło nie odpowie, powiedz wprost, czego nie udało się sprawdzić. Podaj potwierdzone informacje jako wynik częściowy i zakończ zadanie; nie ponawiaj nieudanego wywołania ani nie próbuj tego samego źródła ponownie.
 - Gdy narzędzie nie jest potrzebne, po prostu odpowiedz.
 `.trim();
 

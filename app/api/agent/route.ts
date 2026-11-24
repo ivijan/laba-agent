@@ -11,7 +11,14 @@ import {
 import { chatModel, isModelConfigured } from "@/lib/model";
 import { ANALYSIS_INSTRUCTIONS, INSTRUCTIONS, analysisSchema } from "@/lib/persona";
 import { hasSession } from "@/lib/session";
-import { MAX_STEPS, agentTools, type AgentMetadata } from "@/lib/tools";
+import {
+  MAX_STEPS,
+  MAX_TASK_DURATION_MS,
+  MAX_TOOL_DURATION_MS,
+  MAX_TOOL_CALLS,
+  createTaskAgentTools,
+  type AgentMetadata,
+} from "@/lib/tools";
 
 export const maxDuration = 60;
 
@@ -55,26 +62,61 @@ async function chat(messages: UIMessage[] | undefined) {
   //    użyć narzędzia, przeczytać wynik i dopiero wtedy odpowiedzieć.
   let stepCount = 0;
   let lastModelId = "";
+  let sawToolError = false;
+  const startedAt = Date.now();
+  const toolCallCounter = { count: 0 };
+  const { tools: taskTools, localToolNames } = createTaskAgentTools(toolCallCounter);
   const stepSummaries: Array<{ number: number; tools: string[] }> = [];
   const result = streamText({
     model: chatModel(),
     instructions: INSTRUCTIONS,
-    messages: await convertToModelMessages(messages, { tools: agentTools }),
-    tools: agentTools,
-    stopWhen: isStepCount(6),
+    messages: await convertToModelMessages(messages, { tools: taskTools }),
+    tools: taskTools,
+    stopWhen: [
+      isStepCount(MAX_STEPS),
+      ({ steps }) => steps.reduce((count, step) => count + step.toolCalls.length, 0) >= MAX_TOOL_CALLS,
+    ],
+    timeout: { totalMs: MAX_TASK_DURATION_MS, toolMs: MAX_TOOL_DURATION_MS },
+    toolCallConcurrency: 1,
+    prepareStep: ({ steps }) => {
+      const previousToolFailed = steps.some((step) =>
+        step.content.some((part) => part.type === "tool-error") ||
+        step.toolResults.some((result) =>
+          result.output !== null &&
+          typeof result.output === "object" &&
+          "error" in result.output,
+        ),
+      );
+      return sawToolError || previousToolFailed ? { activeTools: [] } : undefined;
+    },
+    onToolExecutionEnd: ({ toolOutput }) => {
+      if (toolOutput.type === "tool-error") {
+        sawToolError = true;
+        return;
+      }
+      if (
+        toolOutput.type === "tool-result" &&
+        toolOutput.output !== null &&
+        typeof toolOutput.output === "object" &&
+        "error" in toolOutput.output
+      ) {
+        sawToolError = true;
+      }
+    },
     onStepEnd: ({ stepNumber, toolCalls }) => {
       stepSummaries.push({
         number: stepNumber + 1,
         tools: toolCalls.map((call) => call.toolName),
       });
+      toolCallCounter.count += toolCalls.filter((call) => !localToolNames.has(call.toolName)).length;
     },
   });
 
   // 3. Odsyłamy odpowiedź kawałek po kawałku, razem ze źródłami i informacjami o odpowiedzi.
   return createUIMessageStreamResponse({
-    stream: toUIMessageStream<typeof agentTools, UIMessage<AgentMetadata>>({
+    stream: toUIMessageStream<typeof taskTools, UIMessage<AgentMetadata>>({
       stream: result.stream,
-      tools: agentTools,
+      tools: taskTools,
       sendSources: true,
       onError: () => "Model nie odpowiedział. Spróbuj ponownie za chwilę.",
       messageMetadata: ({ part }) => {
@@ -93,6 +135,10 @@ async function chat(messages: UIMessage[] | undefined) {
             }),
             // Ostatni krok skończył się prośbą o narzędzie = zabrakło kroków na odpowiedź.
             stoppedAtLimit: stepCount >= MAX_STEPS && part.finishReason === "tool-calls",
+            stoppedAtToolLimit: toolCallCounter.count >= MAX_TOOL_CALLS && part.finishReason === "tool-calls",
+            timedOut: part.finishReason === "error" && Date.now() - startedAt >= MAX_TASK_DURATION_MS - 1_000,
+            toolCallCount: toolCallCounter.count,
+            elapsedMs: Date.now() - startedAt,
             steps: stepSummaries,
           };
         }

@@ -106,10 +106,15 @@ function Message({ message }: { message: AgentMessage }) {
   const steps = (isAssistant ? message.metadata?.steps ?? [] : [])
     .filter((step) => step.tools.length > 0)
     .map((step) => `${step.number}. ${step.tools.join(" + ")}`);
-  const partialResults = message.metadata?.stoppedAtLimit
+  const stopped = message.metadata?.stoppedAtLimit || message.metadata?.stoppedAtToolLimit || message.metadata?.timedOut;
+  const partialResults = stopped
     ? message.parts.flatMap((part) => {
-        if (!isToolUIPart(part) || part.state !== "output-available") return [];
+        if (!isToolUIPart(part)) return [];
         const name = getToolName(part);
+        if (part.state === "output-error") {
+          return [{ name, text: "Źródło nie odpowiada. Nie udało się sprawdzić tych danych." }];
+        }
+        if (part.state !== "output-available") return [];
         return [{ name, text: toolOutputText(name, part.output) }];
       })
     : [];
@@ -160,9 +165,15 @@ function Message({ message }: { message: AgentMessage }) {
         return null;
       })}
 
-      {message.metadata?.stoppedAtLimit && (
+      {stopped && (
         <section className="partial-results">
-          <strong>Zatrzymałem się po 6 krokach</strong>
+          <strong>
+            {message.metadata?.timedOut
+              ? "Zatrzymałem się po 60 sekundach"
+              : message.metadata?.stoppedAtToolLimit
+                ? "Zatrzymałem się po 16 wywołaniach narzędzi"
+                : "Zatrzymałem się po 2 krokach"}
+          </strong>
           {partialResults.length > 0 ? partialResults.map((result, index) => (
             <p key={`${result.name}-${index}`}>
               <b>{result.name}:</b> {result.text || "Narzędzie nie zwróciło dodatkowych danych."}
@@ -170,7 +181,7 @@ function Message({ message }: { message: AgentMessage }) {
           )) : <p>Nie udało się uzyskać dodatkowych danych z narzędzi.</p>}
         </section>
       )}
-      {isAssistant && !hasContent && message.metadata?.fetchedAt && !message.metadata.stoppedAtLimit && (
+      {isAssistant && !hasContent && message.metadata?.fetchedAt && !stopped && (
         <p className="muted">Nie mam odpowiedzi. Spróbuj zapytać inaczej.</p>
       )}
 
@@ -191,6 +202,11 @@ function Message({ message }: { message: AgentMessage }) {
       )}
 
       {isAssistant && message.metadata?.model && <div className="small">model: {message.metadata.model}</div>}
+      {isAssistant && message.metadata?.elapsedMs !== undefined && (
+        <div className="small agent-metrics">
+          {message.metadata.steps?.length ?? 0} kroków · {message.metadata.toolCallCount ?? 0} wywołań narzędzi · {(message.metadata.elapsedMs / 1000).toFixed(1)} s
+        </div>
+      )}
     </div>
   );
 }

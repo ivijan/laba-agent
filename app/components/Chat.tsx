@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isToolUIPart, type FileUIPart, type UIMessage } from "ai";
@@ -344,6 +345,7 @@ export default function Chat({
           </div>
         </div>
         <div className="header-actions">
+          <Link href="/dashboard" className="header-link">Podróż</Link>
           <ThemeToggle />
           <button type="button" className="ghost" onClick={logout}>
             Wyjdź

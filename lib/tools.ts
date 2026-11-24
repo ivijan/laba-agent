@@ -114,6 +114,7 @@ const pogoda = tool({
       results?: Array<{
         name: string;
         country?: string;
+        country_code?: string;
         admin1?: string;
         latitude: number;
         longitude: number;
@@ -126,6 +127,12 @@ const pogoda = tool({
 
     const miejsce = geocode.data.results?.[0];
     if (!miejsce) return { error: `Nie znalazłem miasta „${miasto}”. Podaj nazwę wraz z regionem lub krajem.`, pobrano: pobranoO };
+    const daneMiejsca = {
+      nazwaMiasta: miejsce.name,
+      miasto: [miejsce.name, miejsce.admin1, miejsce.country].filter(Boolean).join(", "),
+      kodKraju: miejsce.country_code,
+      strefa: miejsce.timezone,
+    };
 
     const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
     forecastUrl.search = new URLSearchParams({
@@ -150,16 +157,16 @@ const pogoda = tool({
       const error = forecast.status === 400 || forecast.status === 404
         ? "Brak prognozy dla tego dnia. Open-Meteo udostępnia prognozę do 16 dni naprzód."
         : "Źródło nie odpowiada (Open-Meteo). Nie udało się sprawdzić prognozy.";
-      return { error, pobrano: pobranoO };
+      return { error, ...daneMiejsca, pobrano: pobranoO };
     }
 
     const daily = forecast.data.daily;
     if (!daily || !Array.isArray(daily.time)) {
-      return { error: "Serwis pogodowy zwrócił niepełną prognozę.", pobrano: pobranoO };
+      return { error: "Serwis pogodowy zwrócił niepełną prognozę.", ...daneMiejsca, pobrano: pobranoO };
     }
     const index = daily.time.indexOf(dzien);
     if (!daily || index < 0 || daily.weather_code?.[index] === undefined) {
-      return { error: "Nie ma prognozy dla tego miasta i dnia.", pobrano: pobranoO };
+      return { error: "Nie ma prognozy dla tego miasta i dnia.", ...daneMiejsca, pobrano: pobranoO };
     }
 
     const opisyPogody: Record<number, string> = {
@@ -193,7 +200,7 @@ const pogoda = tool({
       99: "silna burza z gradem",
     };
     return {
-      miasto: [miejsce.name, miejsce.admin1, miejsce.country].filter(Boolean).join(", "),
+      ...daneMiejsca,
       dzien,
       opis: opisyPogody[daily.weather_code[index]] ?? "nieznane warunki pogodowe",
       temperaturaMinC: daily.temperature_2m_min?.[index],
@@ -557,6 +564,18 @@ export const agentTools = {
   diagnostyka,
   generujObraz,
 };
+
+export type TravelToolName = "pogoda" | "waluty" | "swieta" | "wikipedia" | "czas";
+
+export async function runTravelTool<T = unknown>(name: TravelToolName, input: unknown): Promise<T> {
+  const definition = agentTools[name] as unknown as {
+    inputSchema: { parse: (value: unknown) => unknown };
+    execute?: (value: unknown) => Promise<unknown>;
+  };
+  const parsedInput = definition.inputSchema.parse(input);
+  if (!definition.execute) throw new Error(`Narzędzie ${name} nie ma funkcji wykonującej.`);
+  return await definition.execute(parsedInput) as T;
+}
 
 export function createTaskAgentTools(counter: { count: number }) {
   const localToolNames = new Set<string>();

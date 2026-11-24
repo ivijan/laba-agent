@@ -96,6 +96,21 @@ button.ghost {
   color: var(--accent);
 }
 
+.button {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.file-button {
+  background: transparent;
+  color: var(--accent);
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -126,6 +141,31 @@ button:disabled {
 .message.assistant {
   align-self: flex-start;
   background: var(--bg);
+}
+
+.chat-image {
+  margin: 8px 0;
+}
+
+.chat-image img {
+  display: block;
+  max-width: min(100%, 420px);
+  max-height: 420px;
+  border-radius: 10px;
+  object-fit: contain;
+}
+
+.chat-image figcaption,
+.model-label {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.selected-image {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
 }
 
 .tool-labels {

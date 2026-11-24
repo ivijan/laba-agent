@@ -1,11 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
 
-type ChatMessage = UIMessage<{ sourceFetchedAt?: string }>;
+type ChatMessage = UIMessage<{
+  sourceFetchedAt?: string;
+  modelId?: string;
+  generatedImage?: boolean;
+}>;
+
+const MAX_IMAGE_SIZE = 4 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 type Analysis = {
   category: string;
@@ -16,8 +23,12 @@ type Analysis = {
 
 export default function Chat({ botName, intro }: { botName: string; intro: string }) {
   const router = useRouter();
-  const { messages, sendMessage, status, error } = useChat<ChatMessage>();
+  const { messages, sendMessage, setMessages, status, error } = useChat<ChatMessage>();
   const [input, setInput] = useState("");
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imageError, setImageError] = useState("");
+  const [generatingImage, setGeneratingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analysisError, setAnalysisError] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
@@ -27,9 +38,79 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
   function send(event: React.FormEvent) {
     event.preventDefault();
     const text = input.trim();
-    if (!text || busy) return;
-    sendMessage({ text });
+    if ((!text && !selectedImage) || busy) return;
+    sendMessage({
+      text: text || "Co przedstawia to zdjęcie?",
+      files: selectedImage ? imageInputRef.current?.files ?? undefined : undefined,
+    });
     setInput("");
+    setSelectedImage(null);
+    setImageError("");
+    if (imageInputRef.current) imageInputRef.current.value = "";
+  }
+
+  function selectImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    setImageError("");
+    if (!file) {
+      setSelectedImage(null);
+      return;
+    }
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setSelectedImage(null);
+      setImageError("Wybierz zdjęcie w formacie JPG, PNG lub WebP.");
+      event.target.value = "";
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      setSelectedImage(null);
+      setImageError("Zdjęcie może mieć najwyżej 4 MB.");
+      event.target.value = "";
+      return;
+    }
+    setSelectedImage(file);
+  }
+
+  async function generateImage() {
+    const prompt = input.trim();
+    if (!prompt || prompt.length > 500 || generatingImage) return;
+    setGeneratingImage(true);
+    setImageError("");
+
+    try {
+      const response = await fetch("/api/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.image || !data?.mediaType || !data?.modelId) {
+        setImageError(data?.error ?? "Nie udało się wygenerować obrazu. Spróbuj ponownie.");
+        return;
+      }
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          metadata: { modelId: data.modelId, generatedImage: true },
+          parts: [
+            {
+              type: "file",
+              mediaType: data.mediaType,
+              url: data.image,
+              filename: "wygenerowany-obraz",
+            },
+          ],
+        },
+      ]);
+      setInput("");
+    } catch {
+      setImageError("Nie udało się połączyć z usługą generowania obrazu. Spróbuj ponownie.");
+    } finally {
+      setGeneratingImage(false);
+    }
   }
 
   async function analyze() {
@@ -88,8 +169,22 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
                 </div>
               ) : null;
             })()}
-            {message.parts.map((part, index) =>
-              part.type === "text" ? <span key={index}>{part.text}</span> : null,
+            {message.parts.map((part, index) => {
+              if (part.type === "text") return <span key={index}>{part.text}</span>;
+              if (part.type === "file" && part.mediaType.startsWith("image/")) {
+                return (
+                  <figure className="chat-image" key={index}>
+                    <img src={part.url} alt={part.filename ?? "Zdjęcie w rozmowie"} />
+                    {message.metadata?.modelId && (
+                      <figcaption>Model: {message.metadata.modelId}</figcaption>
+                    )}
+                  </figure>
+                );
+              }
+              return null;
+            })}
+            {message.role === "assistant" && message.metadata?.modelId && !message.metadata.generatedImage && (
+              <small className="model-label">Model: {message.metadata.modelId}</small>
             )}
             {message.role === "assistant" &&
               message.parts.some((part) => part.type === "source-url") && (
@@ -122,6 +217,10 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
         {error && <p className="error">Coś poszło nie tak. Spróbuj ponownie.</p>}
       </div>
 
+      {imageError && <p className="error">{imageError}</p>}
+      {selectedImage && (
+        <p className="muted selected-image">Wybrane zdjęcie: {selectedImage.name}</p>
+      )}
       <form onSubmit={send} className="composer">
         <input
           value={input}
@@ -129,8 +228,26 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
           placeholder="Napisz wiadomość…"
           aria-label="Wiadomość"
         />
-        <button type="submit" disabled={busy || !input.trim()}>
+        <button type="submit" disabled={busy || (!input.trim() && !selectedImage)}>
           Wyślij
+        </button>
+        <label className="button ghost file-button">
+          Dodaj zdjęcie
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+            onChange={selectImage}
+            hidden
+          />
+        </label>
+        <button
+          type="button"
+          className="ghost"
+          onClick={generateImage}
+          disabled={busy || generatingImage || !input.trim() || input.trim().length > 500}
+        >
+          {generatingImage ? "Generuję obraz…" : "Wygeneruj obraz"}
         </button>
         <button type="button" className="ghost" onClick={analyze} disabled={analyzing || !input.trim()}>
           {analyzing ? "Analizuję…" : "Analiza JSON"}

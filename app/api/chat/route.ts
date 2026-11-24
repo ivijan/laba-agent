@@ -30,6 +30,37 @@ export async function POST(req: Request) {
     return Response.json({ error: "Brak wiadomości." }, { status: 400 });
   }
 
+  const lastMessage = messages[messages.length - 1];
+  const imageParts =
+    lastMessage?.role === "user"
+      ? lastMessage.parts.filter((part) => part.type === "file")
+      : [];
+  const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
+  for (const part of imageParts) {
+    if (!allowedImageTypes.includes(part.mediaType)) {
+      return Response.json(
+        { error: "Dozwolone są tylko zdjęcia JPG, PNG i WebP." },
+        { status: 400 },
+      );
+    }
+
+    const base64Data = part.url.match(/^data:image\/(?:jpeg|png|webp);base64,(.+)$/)?.[1];
+    if (!base64Data) {
+      return Response.json({ error: "Nie udało się odczytać zdjęcia." }, { status: 400 });
+    }
+
+    const padding = base64Data.endsWith("==") ? 2 : base64Data.endsWith("=") ? 1 : 0;
+    const imageSize = Math.floor((base64Data.length * 3) / 4) - padding;
+    if (imageSize > 4 * 1024 * 1024) {
+      return Response.json({ error: "Zdjęcie może mieć najwyżej 4 MB." }, { status: 400 });
+    }
+  }
+
+  const hasImage =
+    lastMessage?.role === "user" &&
+    imageParts.length > 0;
+  let usedModelId: string | undefined;
+
   // 2. Wysyłamy rozmowę do modelu i odsyłamy odpowiedź kawałek po kawałku (streaming).
   const result = streamText({
     model: chatModel(),
@@ -125,16 +156,26 @@ export async function POST(req: Request) {
       }),
     },
     stopWhen: isStepCount(5),
+    onStepEnd: ({ response }) => {
+      usedModelId = response.modelId;
+    },
   });
 
   return createUIMessageStreamResponse({
     stream: toUIMessageStream({
       stream: result.stream,
       sendSources: true,
-      originalMessages: messages as UIMessage<{ sourceFetchedAt?: string }>[],
+      originalMessages: messages as UIMessage<{
+        sourceFetchedAt?: string;
+        modelId?: string;
+        generatedImage?: boolean;
+      }>[],
       messageMetadata: ({ part }) =>
         part.type === "finish"
-          ? { sourceFetchedAt: new Date().toISOString() }
+          ? {
+              sourceFetchedAt: new Date().toISOString(),
+              ...(hasImage && usedModelId ? { modelId: usedModelId } : {}),
+            }
           : undefined,
     }),
   });

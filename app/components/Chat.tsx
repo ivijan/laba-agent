@@ -67,6 +67,23 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
         <div className="message assistant">{intro}</div>
         {messages.map((message) => (
           <div key={message.id} className={`message ${message.role}`}>
+            {message.role === "assistant" && (() => {
+              const toolNames = [...new Set(message.parts.flatMap((part) => {
+                if (part.type === "dynamic-tool") return [part.toolName];
+                if (part.type.startsWith("tool-")) return [part.type.slice(5)];
+                return [];
+              }))];
+
+              return toolNames.length > 0 ? (
+                <div className="tool-labels" aria-label="Użyte narzędzia">
+                  {toolNames.map((name) => (
+                    <span className="tool-label" key={name}>
+                      {name === "webSearch" ? "wyszukiwanie" : name}
+                    </span>
+                  ))}
+                </div>
+              ) : null;
+            })()}
             {message.parts.map((part, index) =>
               part.type === "text" ? <span key={index}>{part.text}</span> : null,
             )}

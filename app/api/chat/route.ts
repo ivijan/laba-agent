@@ -3,9 +3,11 @@ import {
   convertToModelMessages,
   createUIMessageStreamResponse,
   isStepCount,
+  tool,
   toUIMessageStream,
   type UIMessage,
 } from "ai";
+import { z } from "zod";
 import { chatModel, isModelConfigured, openrouter } from "@/lib/model";
 import { INSTRUCTIONS } from "@/lib/persona";
 import { hasSession } from "@/lib/session";
@@ -35,6 +37,22 @@ export async function POST(req: Request) {
     messages: await convertToModelMessages(messages),
     tools: {
       webSearch: openrouter.tools.webSearch({ maxResults: 3, engine: "native" }),
+      aktualnyCzas: tool({
+        description:
+          "Zwróć aktualną datę, dzień tygodnia i godzinę w strefie Europe/Warsaw. Używaj tego narzędzia, gdy użytkownik pyta o dziś, jutro, konkretny dzień lub datę, albo za ile dni coś nastąpi — szczególnie do poprawnego ustalenia daty i godziny.",
+        inputSchema: z.object({}),
+        execute: async () => ({
+          dateTime: `${new Intl.DateTimeFormat("pl-PL", {
+            timeZone: "Europe/Warsaw",
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }).format(new Date())} (Europe/Warsaw)`,
+        }),
+      }),
     },
     stopWhen: isStepCount(5),
   });

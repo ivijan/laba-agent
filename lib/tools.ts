@@ -3,7 +3,7 @@ import { z } from "zod";
 import { IMAGE_MODEL_ID, MODEL_ID, imageModel, webSearchTool } from "@/lib/model";
 
 // Narzędzia agenta. Opisy podpowiadają modelowi, kiedy warto ich użyć.
-export const MAX_STEPS = 5;
+export const MAX_STEPS = 6;
 export const MAX_IMAGE_PROMPT = 500;
 
 const TOOL_NAMES = [
@@ -31,6 +31,7 @@ export type AgentMetadata = {
   model?: string;
   fetchedAt?: string;
   stoppedAtLimit?: boolean;
+  steps?: Array<{ number: number; tools: string[] }>;
 };
 
 function pobrano(): string {

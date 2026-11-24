@@ -68,6 +68,22 @@ function usedTools(message: AgentMessage): string[] {
   return names;
 }
 
+function toolOutputText(toolName: string, output: unknown): string {
+  if (toolName === "generujObraz" && output && typeof output === "object") {
+    const imageResult = output as ImageResult;
+    return imageResult.error ?? `Obraz został wygenerowany${imageResult.model ? ` (model: ${imageResult.model})` : ""}.`;
+  }
+  if (typeof output === "string") return output.slice(0, 1200);
+  if (output && typeof output === "object") {
+    const fields = Object.entries(output).filter(([key]) => key !== "image" && key !== "base64");
+    return fields
+      .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+      .join("\n")
+      .slice(0, 1200);
+  }
+  return String(output).slice(0, 1200);
+}
+
 function Picture({ result }: { result: ImageResult }) {
   if (result.error) return <p className="error">{result.error}</p>;
   if (!result.image) return null;
@@ -87,6 +103,16 @@ function Picture({ result }: { result: ImageResult }) {
 function Message({ message }: { message: AgentMessage }) {
   const isAssistant = message.role === "assistant";
   const tools = isAssistant ? usedTools(message) : [];
+  const steps = (isAssistant ? message.metadata?.steps ?? [] : [])
+    .filter((step) => step.tools.length > 0)
+    .map((step) => `${step.number}. ${step.tools.join(" + ")}`);
+  const partialResults = message.metadata?.stoppedAtLimit
+    ? message.parts.flatMap((part) => {
+        if (!isToolUIPart(part) || part.state !== "output-available") return [];
+        const name = getToolName(part);
+        return [{ name, text: toolOutputText(name, part.output) }];
+      })
+    : [];
   const sources = message.parts.filter((part) => part.type === "source-url");
   const hasContent = message.parts.some(
     (part) => (part.type === "text" && part.text.trim()) || part.type === "tool-generujObraz",
@@ -94,6 +120,11 @@ function Message({ message }: { message: AgentMessage }) {
 
   return (
     <div className={`message ${message.role}`}>
+      {steps.length > 0 && (
+        <div className="agent-steps" aria-label="Kroki agenta">
+          Kroki: {steps.join(" → ")}
+        </div>
+      )}
       {tools.length > 0 && (
         <div className="labels">
           {tools.map((name) => (
@@ -129,7 +160,16 @@ function Message({ message }: { message: AgentMessage }) {
         return null;
       })}
 
-      {message.metadata?.stoppedAtLimit && <p className="muted">Przerwałem po 5 krokach.</p>}
+      {message.metadata?.stoppedAtLimit && (
+        <section className="partial-results">
+          <strong>Zatrzymałem się po 6 krokach</strong>
+          {partialResults.length > 0 ? partialResults.map((result, index) => (
+            <p key={`${result.name}-${index}`}>
+              <b>{result.name}:</b> {result.text || "Narzędzie nie zwróciło dodatkowych danych."}
+            </p>
+          )) : <p>Nie udało się uzyskać dodatkowych danych z narzędzi.</p>}
+        </section>
+      )}
       {isAssistant && !hasContent && message.metadata?.fetchedAt && !message.metadata.stoppedAtLimit && (
         <p className="muted">Nie mam odpowiedzi. Spróbuj zapytać inaczej.</p>
       )}

@@ -53,15 +53,22 @@ async function chat(messages: UIMessage[] | undefined) {
 
   // 2. Wysyłamy rozmowę do modelu. Model może wykonać kilka kroków:
   //    użyć narzędzia, przeczytać wynik i dopiero wtedy odpowiedzieć.
+  let stepCount = 0;
+  let lastModelId = "";
+  const stepSummaries: Array<{ number: number; tools: string[] }> = [];
   const result = streamText({
     model: chatModel(),
     instructions: INSTRUCTIONS,
     messages: await convertToModelMessages(messages, { tools: agentTools }),
     tools: agentTools,
-    stopWhen: isStepCount(MAX_STEPS),
+    stopWhen: isStepCount(6),
+    onStepEnd: ({ stepNumber, toolCalls }) => {
+      stepSummaries.push({
+        number: stepNumber + 1,
+        tools: toolCalls.map((call) => call.toolName),
+      });
+    },
   });
-
-  let steps = 0;
 
   // 3. Odsyłamy odpowiedź kawałek po kawałku, razem ze źródłami i informacjami o odpowiedzi.
   return createUIMessageStreamResponse({
@@ -72,18 +79,21 @@ async function chat(messages: UIMessage[] | undefined) {
       onError: () => "Model nie odpowiedział. Spróbuj ponownie za chwilę.",
       messageMetadata: ({ part }) => {
         if (part.type === "finish-step") {
-          steps += 1;
+          stepCount += 1;
+          lastModelId = part.response.modelId;
           return { model: part.response.modelId };
         }
         if (part.type === "finish") {
           return {
+            model: lastModelId,
             fetchedAt: new Date().toLocaleString("pl-PL", {
               timeZone: "Europe/Warsaw",
               dateStyle: "short",
               timeStyle: "short",
             }),
             // Ostatni krok skończył się prośbą o narzędzie = zabrakło kroków na odpowiedź.
-            stoppedAtLimit: steps >= MAX_STEPS && part.finishReason === "tool-calls",
+            stoppedAtLimit: stepCount >= MAX_STEPS && part.finishReason === "tool-calls",
+            steps: stepSummaries,
           };
         }
       },

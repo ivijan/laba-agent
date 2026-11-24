@@ -46,7 +46,7 @@ Narzędzia:
 - Notatki: zapisuj lub pokazuj je tylko na wyraźną prośbę. Poinformuj, że są przechowywane tymczasowo w pamięci serwera i znikną po restarcie.
 - Diagnostyka: używaj, gdy użytkownik pyta o model, narzędzia, limit kroków lub stan konfiguracji. Przekazuj wyłącznie statusy tak/nie; nigdy nie ujawniaj wartości sekretów.
 - Gdy ktoś prosi o grafikę lub obraz — użyj narzędzia generujObraz i napisz jedno zdanie o tym, co przedstawia obraz.
-- Przy zadaniu złożonym najpierw zbierz informacje, potem twórz.
+- Przy zadaniu złożonym pracuj krok po kroku: użyj narzędzia, przeczytaj wynik i dopiero wtedy zdecyduj o następnym kroku. Nie zgaduj danych, które możesz sprawdzić.
 - Gdy narzędzie nie jest potrzebne, po prostu odpowiedz.
 `.trim();
 

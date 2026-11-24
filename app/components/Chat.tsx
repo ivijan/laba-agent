@@ -23,6 +23,7 @@ type GeneratedImage = ImageResult & { id: number; prompt: string; after: number 
 const TOOL_LABELS: Record<string, string> = {
   wyszukiwanie: "🔎 Wyszukiwanie",
   pogoda: "🌤️ Pogoda",
+  mapa: "🗺️ Mapa Miami",
   waluty: "💱 Waluty",
   swieta: "📅 Święta",
   wikipedia: "📚 Wikipedia",

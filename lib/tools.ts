@@ -9,6 +9,7 @@ export const MAX_IMAGE_PROMPT = 500;
 const TOOL_NAMES = [
   "wyszukiwanie",
   "pogoda",
+  "mapa",
   "waluty",
   "swieta",
   "wikipedia",
@@ -187,6 +188,110 @@ const pogoda = tool({
       prawdopodobienstwoOpadowProc: daily.precipitation_probability_max?.[index],
       wiatrMaxKmh: daily.wind_speed_10m_max?.[index],
       strefa: miejsce.timezone,
+      pobrano: pobranoO,
+    };
+  },
+});
+
+const MAP_CATEGORIES = {
+  plaza: { label: "plaże", key: "natural", value: "beach" },
+  park: { label: "parki", key: "leisure", value: "park" },
+  marina: { label: "mariny", key: "leisure", value: "marina" },
+  most: { label: "mosty", key: "man_made", value: "bridge" },
+  lotnisko: { label: "lotniska", key: "aeroway", value: "aerodrome" },
+  policja: { label: "posterunki policji", key: "amenity", value: "police" },
+  restauracja: { label: "restauracje", key: "amenity", value: "restaurant" },
+  atrakcja: { label: "atrakcje turystyczne", key: "tourism", value: "attraction" },
+} as const;
+
+type OverpassElement = {
+  type: "node" | "way" | "relation";
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: Record<string, string>;
+};
+
+const mapa = tool({
+  description:
+    "Wyszukuje prawdziwe miejsca z OpenStreetMap w promieniu 5 km od miasta, szczególnie w Miami i na Florydzie. " +
+    "Użyj, gdy użytkownik pyta o lokalne plaże, parki, mariny, mosty, lotniska, posterunki policji, restauracje lub atrakcje. " +
+    "Wybierz jedną kategorię z listy i podaj miasto, dopisując stan lub kraj przy niejednoznacznej nazwie. " +
+    "Zwróć nazwę miejsca oraz link do OpenStreetMap. Dane nie opisują fikcyjnych lokacji z gry GTA.",
+  inputSchema: z.object({
+    miasto: z.string().trim().min(2).max(100).describe("Miasto; np. Miami, Florida, USA"),
+    kategoria: z.enum(["plaza", "park", "marina", "most", "lotnisko", "policja", "restauracja", "atrakcja"])
+      .describe("Rodzaj miejsca do znalezienia"),
+  }),
+  execute: async ({ miasto, kategoria }) => {
+    const pobranoO = pobrano();
+    const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
+    geocodeUrl.search = new URLSearchParams({ name: miasto, count: "1", language: "pl", format: "json" }).toString();
+    const geocode = await pobierzJson<{
+      results?: Array<{ name: string; country?: string; admin1?: string; latitude: number; longitude: number }>;
+    }>(geocodeUrl.toString());
+    if (!geocode.ok) {
+      return { error: "Nie udało się wyszukać miasta. Spróbuj ponownie za chwilę.", pobrano: pobranoO };
+    }
+    const miejsce = geocode.data.results?.[0];
+    if (!miejsce || !Number.isFinite(miejsce.latitude) || !Number.isFinite(miejsce.longitude)) {
+      return { error: `Nie znalazłem miasta „${miasto}”. Podaj nazwę wraz ze stanem lub krajem.`, pobrano: pobranoO };
+    }
+
+    const { label, key, value } = MAP_CATEGORIES[kategoria];
+    const query = `[out:json][timeout:15];\n` +
+      `nwr(around:5000,${miejsce.latitude},${miejsce.longitude})["${key}"="${value}"];\n` +
+      `out center 15;`;
+    let overpass: FetchResult<{ elements?: OverpassElement[] }>;
+    try {
+      const response = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", Accept: "application/json" },
+        body: new URLSearchParams({ data: query }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!response.ok) overpass = { ok: false, status: response.status };
+      else {
+        const data: unknown = await response.json();
+        overpass = data !== null && typeof data === "object"
+          ? { ok: true, data: data as { elements?: OverpassElement[] } }
+          : { ok: false, status: 502 };
+      }
+    } catch {
+      overpass = { ok: false };
+    }
+    if (!overpass.ok) {
+      const error = overpass.status === 429
+        ? "Mapa jest chwilowo mocno obciążona. Spróbuj ponownie za około 30 sekund."
+        : "Serwis mapy OpenStreetMap nie odpowiada. Spróbuj ponownie za chwilę.";
+      return { error, pobrano: pobranoO };
+    }
+    if (!Array.isArray(overpass.data.elements)) {
+      return { error: "Serwis mapy zwrócił niepełne dane. Spróbuj ponownie za chwilę.", pobrano: pobranoO };
+    }
+    const miejsca = overpass.data.elements.slice(0, 15).map((element) => {
+      const tags = element.tags ?? {};
+      const nazwa = tags.name || tags["name:en"] || tags["name:es"];
+      return {
+        nazwa: nazwa || `Miejsce bez nazwy (${label})`,
+        ...(tags["addr:street"] ? { ulica: tags["addr:street"] } : {}),
+        ...(tags["addr:housenumber"] ? { numer: tags["addr:housenumber"] } : {}),
+        ...(element.lat !== undefined || element.center ? { szerokosc: element.lat ?? element.center?.lat } : {}),
+        ...(element.lon !== undefined || element.center ? { dlugosc: element.lon ?? element.center?.lon } : {}),
+        link: `https://www.openstreetmap.org/${element.type}/${element.id}`,
+      };
+    });
+    if (miejsca.length === 0) {
+      return { error: `Nie znalazłem kategorii „${label}” w promieniu 5 km od ${miejsce.name}. Spróbuj innej kategorii lub miasta.`, pobrano: pobranoO };
+    }
+    return {
+      miasto: [miejsce.name, miejsce.admin1, miejsce.country].filter(Boolean).join(", "),
+      kategoria: label,
+      promienKm: 5,
+      miejsca,
+      zrodlo: "© OpenStreetMap contributors",
       pobrano: pobranoO,
     };
   },
@@ -426,6 +531,7 @@ const diagnostyka = tool({
 export const agentTools = {
   wyszukiwanie: webSearchTool(),
   pogoda,
+  mapa,
   waluty,
   swieta,
   wikipedia,

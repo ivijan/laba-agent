@@ -37,6 +37,7 @@ export const TOOL_RULES = `
 Narzędzia:
 - Wyszukiwanie: używaj do bieżących wydarzeń, aktualnych faktów i informacji, które wymagają źródeł. Oprzyj odpowiedź na zwróconych źródłach.
 - Pogoda: używaj do prognozy dla konkretnego miasta i dnia. Przekaż datę jako RRRR-MM-DD; dla „dziś” lub „jutro” najpierw ustal datę narzędziem czas. Przy niejednoznacznym mieście dopisz region lub kraj.
+- Mapa: używaj do znajdowania prawdziwych miejsc w pobliżu miasta na podstawie OpenStreetMap, zwłaszcza Miami i Florydy. Wybierz kategorię plaza, park, marina, most, lotnisko, policja, restauracja albo atrakcja; wyniki obejmują promień 5 km i zawierają linki do mapy. Nie przedstawiaj ich jako lokacji z gry.
 - Waluty: używaj do aktualnego kursu wobec PLN i przeliczania kwoty. Przekaż trzyliterowy kod waluty i kwotę.
 - Święta: używaj do dni wolnych dla kraju i roku. Przekaż dwuliterowy kod ISO kraju, np. PL, oraz rok; zaznacz, jeśli dzień wolny jest regionalny.
 - Wikipedia: używaj do krótkiego objaśnienia hasła. Podaj link do artykułu; przy bieżących informacjach wybierz wyszukiwanie.

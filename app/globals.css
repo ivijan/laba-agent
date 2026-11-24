@@ -111,7 +111,8 @@ button.ghost {
   color: var(--accent);
 }
 
-button:disabled {
+button:disabled,
+.button:has(input:disabled) {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -163,6 +164,17 @@ button:disabled {
   font-size: 0.75rem;
 }
 
+.download-button {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
 .selected-image {
   margin: 0 0 8px;
   font-size: 0.85rem;
@@ -208,6 +220,28 @@ button:disabled {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.prompt-suggestions {
+  flex: 1 0 100%;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.prompt-suggestions > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.suggestion-button {
+  padding: 6px 9px;
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.8rem;
+  text-align: left;
 }
 
 .analysis {

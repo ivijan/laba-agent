@@ -13,6 +13,11 @@ type ChatMessage = UIMessage<{
 
 const MAX_IMAGE_SIZE = 4 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const IMAGE_PROMPT_SUGGESTIONS = [
+  "Nowoczesna strona internetowa dla małej pracowni ceramicznej, jasne kolory i naturalne światło",
+  "Minimalistyczne logo dla studia jogi, spokojne barwy i elegancka typografia",
+  "Projekt identyfikacji wizualnej dla lokalnej kawiarni, ciepłe kolory i prosty styl",
+];
 
 type Analysis = {
   category: string;
@@ -29,6 +34,7 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
   const [imageError, setImageError] = useState("");
   const [generatingImage, setGeneratingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const generationLockRef = useRef(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analysisError, setAnalysisError] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
@@ -38,7 +44,7 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
   function send(event: React.FormEvent) {
     event.preventDefault();
     const text = input.trim();
-    if ((!text && !selectedImage) || busy) return;
+    if ((!text && !selectedImage) || busy || generatingImage) return;
     sendMessage({
       text: text || "Co przedstawia to zdjęcie?",
       files: selectedImage ? imageInputRef.current?.files ?? undefined : undefined,
@@ -73,7 +79,8 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
 
   async function generateImage() {
     const prompt = input.trim();
-    if (!prompt || prompt.length > 500 || generatingImage) return;
+    if (!prompt || prompt.length > 500 || busy || generationLockRef.current) return;
+    generationLockRef.current = true;
     setGeneratingImage(true);
     setImageError("");
 
@@ -109,6 +116,7 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
     } catch {
       setImageError("Nie udało się połączyć z usługą generowania obrazu. Spróbuj ponownie.");
     } finally {
+      generationLockRef.current = false;
       setGeneratingImage(false);
     }
   }
@@ -178,6 +186,15 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
                     {message.metadata?.modelId && (
                       <figcaption>Model: {message.metadata.modelId}</figcaption>
                     )}
+                    {message.metadata?.generatedImage && (
+                      <a
+                        className="download-button"
+                        href={part.url}
+                        download={`obraz.${part.mediaType === "image/jpeg" ? "jpg" : part.mediaType.split("/")[1]}`}
+                      >
+                        Pobierz
+                      </a>
+                    )}
                   </figure>
                 );
               }
@@ -227,10 +244,27 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
           onChange={(event) => setInput(event.target.value)}
           placeholder="Napisz wiadomość…"
           aria-label="Wiadomość"
+          disabled={generatingImage}
         />
-        <button type="submit" disabled={busy || (!input.trim() && !selectedImage)}>
+        <button type="submit" disabled={busy || generatingImage || (!input.trim() && !selectedImage)}>
           Wyślij
         </button>
+        <div className="prompt-suggestions">
+          <span>Pomysły na obraz:</span>
+          <div>
+            {IMAGE_PROMPT_SUGGESTIONS.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                className="suggestion-button"
+                onClick={() => setInput(suggestion)}
+                disabled={busy || generatingImage}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="button ghost file-button">
           Dodaj zdjęcie
           <input
@@ -238,6 +272,7 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
             type="file"
             accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
             onChange={selectImage}
+            disabled={busy || generatingImage}
             hidden
           />
         </label>
@@ -249,7 +284,7 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
         >
           {generatingImage ? "Generuję obraz…" : "Wygeneruj obraz"}
         </button>
-        <button type="button" className="ghost" onClick={analyze} disabled={analyzing || !input.trim()}>
+        <button type="button" className="ghost" onClick={analyze} disabled={analyzing || busy || generatingImage || !input.trim()}>
           {analyzing ? "Analizuję…" : "Analiza JSON"}
         </button>
       </form>

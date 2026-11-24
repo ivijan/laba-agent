@@ -707,6 +707,33 @@ h2 {
   font-size: 1.15rem;
 }
 
+.travel-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-status {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid var(--hover-border);
+  border-radius: 999px;
+  color: var(--accent-dark);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.card-status.is-missing {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.travel-card.is-loading .card-status {
+  opacity: 0.8;
+}
+
 .travel-value {
   min-height: 3.4em;
   margin: 0 0 12px;
@@ -718,6 +745,10 @@ h2 {
 
 .travel-card.has-error .travel-value {
   color: var(--error);
+}
+
+.travel-card.is-loading .travel-value {
+  color: var(--muted);
 }
 
 .travel-wiki-link {

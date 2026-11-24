@@ -36,11 +36,12 @@ type TimeResult = BaseResult & { godzina?: string; strefa?: string };
 type DashboardCard = {
   id: string;
   nazwa: string;
-  wartosc: string;
+  status: "OK" | "Brak danych";
+  wartosc?: string;
   zrodlo: string;
-  pobrano: string;
+  pobrano?: string;
   link?: string;
-  blad?: boolean;
+  powodBraku?: string;
 };
 
 const WALUTY_KRAJOW = {
@@ -57,14 +58,6 @@ const WALUTY_KRAJOW = {
   GH: "GHS", TZ: "TZS", UG: "UGX", ET: "ETB", MU: "MUR", CR: "CRC", PA: "PAB",
   PE: "PEN", UY: "UYU", DO: "DOP", JM: "JMD", BS: "BSD", TT: "TTD", EC: "USD", SV: "USD",
 } satisfies Record<string, string>;
-
-function pobranoTeraz(): string {
-  return new Date().toLocaleString("pl-PL", {
-    timeZone: "Europe/Warsaw",
-    dateStyle: "short",
-    timeStyle: "medium",
-  });
-}
 
 function formatujLiczbe(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat("pl-PL", { maximumFractionDigits }).format(value);
@@ -83,10 +76,6 @@ function offsetMinut(strefa: string, date: Date): number | null {
   } catch {
     return null;
   }
-}
-
-function tekstBledu(result: BaseResult, fallback: string): string | undefined {
-  return result.error || (result.pobrano ? undefined : fallback);
 }
 
 export async function POST(request: Request) {
@@ -132,12 +121,15 @@ export async function POST(request: Request) {
   const offsetPolski = offsetMinut("Europe/Warsaw", teraz);
   const roznica = roznicaMinut === null || offsetPolski === null ? null : roznicaMinut - offsetPolski;
   const roznicaTekst = roznica === null
-    ? "Nie udało się obliczyć różnicy czasu."
+    ? undefined
     : roznica === 0
       ? "taka sama godzina jak w Polsce"
       : `${formatujLiczbe(Math.abs(roznica) / 60)} godz. ${roznica > 0 ? "później" : "wcześniej"} niż w Polsce`;
 
-  const prognozaTekst = pogoda.error || [
+  const powodPogody = pogoda.error || (!pogoda.opis || pogoda.opis === "nieznane warunki pogodowe"
+    ? "Open-Meteo nie zwrócił pełnego opisu prognozy."
+    : undefined);
+  const prognozaTekst = powodPogody ? undefined : [
     pogoda.opis,
     typeof pogoda.temperaturaMinC === "number" && typeof pogoda.temperaturaMaxC === "number"
       ? `${formatujLiczbe(pogoda.temperaturaMinC)}–${formatujLiczbe(pogoda.temperaturaMaxC)} °C`
@@ -146,53 +138,66 @@ export async function POST(request: Request) {
       ? `opady: ${formatujLiczbe(pogoda.prawdopodobienstwoOpadowProc, 0)}%`
       : undefined,
     typeof pogoda.wiatrMaxKmh === "number" ? `wiatr: do ${formatujLiczbe(pogoda.wiatrMaxKmh)} km/h` : undefined,
-  ].filter(Boolean).join(" · ") || "Brak danych prognozy.";
+  ].filter(Boolean).join(" · ");
 
-  const kursTekst = kurs.error
-    ? kurs.error
-    : typeof kurs.kursPLN === "number"
-      ? `1 ${waluta} = ${formatujLiczbe(kurs.kursPLN, 4)} PLN${kurs.dataKursu ? ` (kurs z ${kurs.dataKursu})` : ""}`
-      : "Brak danych kursu.";
-  const najblizszeSwieta = swieta.dniWolne?.filter((holiday) => holiday.data >= data).slice(0, 3) ?? [];
-  const swietaTekst = swieta.error
-    ? swieta.error
+  const powodKursu = kurs.error || (typeof kurs.kursPLN !== "number" ? "NBP nie zwrócił kursu." : undefined);
+  const kursTekst = powodKursu ? undefined : `1 ${waluta} = ${formatujLiczbe(kurs.kursPLN!, 4)} PLN${kurs.dataKursu ? ` (kurs z ${kurs.dataKursu})` : ""}`;
+  const swietaOdDaty = swieta.dniWolne?.filter((holiday) => holiday.data >= data) ?? [];
+  const swietaZNazwami = swietaOdDaty.filter((holiday) => holiday.nazwa && holiday.nazwa !== "Święto");
+  const najblizszeSwieta = swietaZNazwami.slice(0, 3);
+  const powodSwieta = swieta.error || !Array.isArray(swieta.dniWolne)
+    ? "Nager.Date nie zwrócił listy świąt."
+    : swietaOdDaty.length > 0 && swietaZNazwami.length === 0
+      ? "Nager.Date nie zwrócił nazw najbliższych dni wolnych."
+      : undefined;
+  const swietaTekst = powodSwieta
+    ? undefined
     : najblizszeSwieta.length > 0
       ? najblizszeSwieta.map((holiday) => `${holiday.data}: ${holiday.nazwa}${holiday.regiony?.length ? ` (${holiday.regiony.join(", ")})` : ""}`).join(" · ")
       : `Brak kolejnych dni wolnych w ${rok} od ${data}.`;
-  const streszczenie = wikipedia.streszczenie?.match(/[^.!?]+[.!?]+/g)?.slice(0, 2).join(" ").trim()
-    || wikipedia.streszczenie
-    || "Brak krótkiego opisu miasta.";
-  const czasTekst = czasMiejsca.error
-    ? czasMiejsca.error
-    : `${czasMiejsca.godzina ?? "Brak godziny"} — ${roznicaTekst}`;
+  const streszczenie = wikipedia.streszczenie === "To hasło nie ma krótkiego streszczenia."
+    ? undefined
+    : wikipedia.streszczenie?.match(/[^.!?]+[.!?]+/g)?.slice(0, 2).join(" ").trim() || wikipedia.streszczenie;
+  const powodWiki = wikipedia.error || (!streszczenie || !wikipedia.link ? "Wikipedia nie zwróciła streszczenia ani linku." : undefined);
+  const powodCzasu = czasMiejsca.error || czasPolski.error || !czasMiejsca.godzina || !roznicaTekst
+    ? "Nie udało się ustalić aktualnej godziny i różnicy czasu."
+    : undefined;
+  const czasTekst = powodCzasu ? undefined : `${czasMiejsca.godzina} — ${roznicaTekst}`;
 
   const cards: DashboardCard[] = [
-    { id: "weather", nazwa: "Pogoda", wartosc: prognozaTekst, zrodlo: "Open-Meteo", pobrano: pogoda.pobrano || pobranoTeraz(), blad: Boolean(pogoda.error) },
-    { id: "currency", nazwa: "Waluty", wartosc: kursTekst, zrodlo: "NBP", pobrano: kurs.pobrano || pobranoTeraz(), blad: Boolean(kurs.error) },
-    { id: "holidays", nazwa: "Święta", wartosc: swietaTekst, zrodlo: "Nager.Date", pobrano: swieta.pobrano || pobranoTeraz(), blad: Boolean(swieta.error) },
-    { id: "wikipedia", nazwa: "O mieście", wartosc: streszczenie, zrodlo: "Wikipedia polska", pobrano: wikipedia.pobrano || pobranoTeraz(), link: wikipedia.link, blad: Boolean(wikipedia.error) },
-    { id: "time", nazwa: "Czas na miejscu", wartosc: czasTekst, zrodlo: "Zegar systemowy / IANA", pobrano: czasMiejsca.pobrano || pobranoTeraz(), blad: Boolean(czasMiejsca.error) },
+    { id: "weather", nazwa: "Pogoda", status: powodPogody ? "Brak danych" : "OK", ...(prognozaTekst ? { wartosc: prognozaTekst } : {}), zrodlo: "Open-Meteo", pobrano: pogoda.pobrano, powodBraku: powodPogody },
+    { id: "currency", nazwa: "Waluty", status: powodKursu ? "Brak danych" : "OK", ...(kursTekst ? { wartosc: kursTekst } : {}), zrodlo: "NBP", pobrano: kurs.pobrano, powodBraku: powodKursu },
+    { id: "holidays", nazwa: "Święta", status: powodSwieta ? "Brak danych" : "OK", ...(swietaTekst ? { wartosc: swietaTekst } : {}), zrodlo: "Nager.Date", pobrano: swieta.pobrano, powodBraku: powodSwieta },
+    { id: "wikipedia", nazwa: "O mieście", status: powodWiki ? "Brak danych" : "OK", ...(streszczenie ? { wartosc: streszczenie } : {}), zrodlo: "Wikipedia polska", pobrano: wikipedia.pobrano, ...(!powodWiki && wikipedia.link ? { link: wikipedia.link } : {}), powodBraku: powodWiki },
+    { id: "time", nazwa: "Czas na miejscu", status: powodCzasu ? "Brak danych" : "OK", ...(czasTekst ? { wartosc: czasTekst } : {}), zrodlo: "Zegar systemowy / IANA", pobrano: czasMiejsca.pobrano, powodBraku: powodCzasu },
   ];
 
+  const brakujaceZrodla = cards.filter((card) => card.status === "Brak danych");
   const podsumowanieDanych = {
     miasto: pogoda.miasto || miasto,
     data,
-    pogoda: prognozaTekst,
-    kurs: kursTekst,
-    najblizszeSwieta: swietaTekst,
-    czas: czasTekst,
-    opisMiasta: streszczenie,
+    karty: cards.map(({ nazwa, status, wartosc, zrodlo, powodBraku }) => ({ nazwa, status, wartosc, zrodlo, powodBraku })),
+    brakujaceZrodla: brakujaceZrodla.map((card) => `${card.zrodlo} (${card.nazwa}): ${card.powodBraku ?? "brak danych"}`),
   };
-  let podsumowanie = "Nie udało się wygenerować podsumowania. Sprawdź dane na kartach przed wyjazdem.";
+  const listaBrakow = brakujaceZrodla.map((card) => `${card.zrodlo} (${card.nazwa})`).join(", ");
+  let podsumowanie = brakujaceZrodla.length > 0
+    ? `Dopasuj bagaż do danych z dostępnych kart. Brak danych z: ${listaBrakow}.`
+    : "Sprawdź dane na kartach i przygotuj bagaż do warunków w miejscu docelowym.";
   if (isModelConfigured()) {
     try {
       const result = await generateText({
         model: chatModel(),
-        instructions: "Jesteś asystentem podróży. Napisz po polsku krótkie podsumowanie w 2–3 zdaniach: co spakować i na co uważać. Opieraj się wyłącznie na podanych danych. Jeśli dane są niedostępne, powiedz to wprost; nie zgaduj.",
+        instructions: "Jesteś asystentem podróży. Napisz po polsku dokładnie 2 zdania: co spakować i na co uważać. Opieraj się wyłącznie na podanych danych, niczego nie zgaduj. Jeśli brakuje źródła, nazwij je wprost w drugim zdaniu.",
         prompt: JSON.stringify(podsumowanieDanych),
         timeout: { totalMs: 15_000 },
       });
-      if (result.text.trim()) podsumowanie = result.text.trim();
+      if (result.text.trim()) {
+        podsumowanie = result.text.trim();
+        if (brakujaceZrodla.length > 0 && !brakujaceZrodla.every((card) => podsumowanie.includes(card.zrodlo))) {
+          const pierwszeZdanie = podsumowanie.match(/[^.!?]+[.!?]+/)?.[0].trim() || "Dopasuj bagaż do potwierdzonych danych z kart.";
+          podsumowanie = `${pierwszeZdanie} Brak danych z: ${listaBrakow}.`;
+        }
+      }
     } catch {
       // Karty z danymi pozostają dostępne, nawet gdy model nie przygotuje podsumowania.
     }

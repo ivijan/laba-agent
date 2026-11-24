@@ -7,11 +7,11 @@ import { ThemeToggle } from "@/app/components/ThemeProvider";
 type DashboardCard = {
   id: string;
   nazwa: string;
-  wartosc: string;
+  status: "OK" | "Ładuję…" | "Brak danych";
+  wartosc?: string;
   zrodlo: string;
-  pobrano: string;
+  pobrano?: string;
   link?: string;
-  blad?: boolean;
 };
 
 type DashboardResult = {
@@ -20,6 +20,14 @@ type DashboardResult = {
   cards: DashboardCard[];
   podsumowanie: string;
 };
+
+const ZRODLA = [
+  { id: "weather", nazwa: "Pogoda", zrodlo: "Open-Meteo" },
+  { id: "currency", nazwa: "Waluty", zrodlo: "NBP" },
+  { id: "holidays", nazwa: "Święta", zrodlo: "Nager.Date" },
+  { id: "wikipedia", nazwa: "O mieście", zrodlo: "Wikipedia polska" },
+  { id: "time", nazwa: "Czas na miejscu", zrodlo: "Zegar systemowy / IANA" },
+];
 
 function dzisiajWPolsce(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -43,6 +51,7 @@ export default function Dashboard() {
     if (ladowanie) return;
     setLadowanie(true);
     setBlad("");
+    setWynik(null);
     const response = await fetch("/api/dashboard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -51,7 +60,8 @@ export default function Dashboard() {
     const body = await response?.json().catch(() => null);
     setLadowanie(false);
     if (!response?.ok || !body) {
-      setBlad(body?.error ?? "Nie udało się pobrać danych. Spróbuj ponownie.");
+      const message = body?.error ?? "Nie udało się pobrać danych. Spróbuj ponownie.";
+      setBlad(message);
       return;
     }
     setWynik(body as DashboardResult);
@@ -108,7 +118,18 @@ export default function Dashboard() {
         {blad && <p className="dashboard-error" role="alert">{blad}</p>}
 
         {ladowanie && (
-          <p className="dashboard-loading" role="status">Zbieram dane z pięciu źródeł i przygotowuję podsumowanie…</p>
+          <section className="dashboard-results" aria-live="polite">
+            <p className="dashboard-loading" role="status">Zbieram dane z pięciu źródeł i przygotowuję podsumowanie…</p>
+            <div className="travel-cards">
+              {ZRODLA.map((card) => (
+                <article className="travel-card is-loading" key={card.id}>
+                  <div className="travel-card-heading"><h3>{card.nazwa}</h3><span className="card-status">Ładuję…</span></div>
+                  <p className="travel-value">Ładuję…</p>
+                  <div className="travel-meta"><span>Źródło: {card.zrodlo}</span><span>Pobrano: —</span></div>
+                </article>
+              ))}
+            </div>
+          </section>
         )}
 
         {wynik && !ladowanie && (
@@ -126,17 +147,20 @@ export default function Dashboard() {
 
             <div className="travel-cards">
               {wynik.cards.map((card) => (
-                <article className={`travel-card${card.blad ? " has-error" : ""}`} key={card.id}>
-                  <h3>{card.nazwa}</h3>
-                  <p className="travel-value">{card.wartosc}</p>
-                  {card.link && (
+                <article className={`travel-card${card.status === "Brak danych" ? " has-error" : ""}`} key={card.id}>
+                  <div className="travel-card-heading">
+                    <h3>{card.nazwa}</h3>
+                    <span className={`card-status${card.status === "Brak danych" ? " is-missing" : ""}`}>{card.status}</span>
+                  </div>
+                  <p className="travel-value">{card.status === "Brak danych" ? "Brak danych — spróbuj odświeżyć" : card.wartosc}</p>
+                  {card.status === "OK" && card.link && (
                     <a className="travel-wiki-link" href={card.link} target="_blank" rel="noreferrer">
                       Czytaj w Wikipedii
                     </a>
                   )}
                   <div className="travel-meta">
                     <span>Źródło: {card.zrodlo}</span>
-                    <span>Pobrano: {card.pobrano}</span>
+                    <span>Pobrano: {card.pobrano ?? "—"}</span>
                   </div>
                 </article>
               ))}

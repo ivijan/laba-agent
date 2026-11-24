@@ -250,15 +250,20 @@ export default function Chat({
 
   return (
     <div className="card chat">
-      <header>
-        <h1>{botName}</h1>
+      <header className="chat-header">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">SN</span>
+          <div className="brand-copy">
+            <h1>{botName}</h1>
+            <p className="chat-intro">{intro}</p>
+          </div>
+        </div>
         <button type="button" className="ghost" onClick={logout}>
           Wyjdź
         </button>
       </header>
 
       <div className="messages">
-        <div className="message assistant">{intro}</div>
         {imagesAfter(0)}
         {messages.map((message, index) => (
           <div key={message.id} className="turn">

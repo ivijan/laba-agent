@@ -164,6 +164,18 @@ button.ghost:hover:not(:disabled) {
   box-shadow: none;
 }
 
+button.stop-button {
+  border-color: #b42335;
+  background: #b42335;
+  color: #fff;
+}
+
+button.stop-button:hover:not(:disabled) {
+  border-color: #8f1d2c;
+  background: #8f1d2c;
+  box-shadow: none;
+}
+
 button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -509,6 +521,11 @@ h2 {
 
 .partial-results p {
   margin: 5px 0;
+}
+
+.interrupted {
+  margin-top: 8px;
+  font-size: 0.8rem;
 }
 
 .sources {

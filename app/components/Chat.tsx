@@ -100,7 +100,7 @@ function Picture({ result }: { result: ImageResult }) {
   );
 }
 
-function Message({ message }: { message: AgentMessage }) {
+function Message({ message, stoppedByUser }: { message: AgentMessage; stoppedByUser?: boolean }) {
   const isAssistant = message.role === "assistant";
   const tools = isAssistant ? usedTools(message) : [];
   const steps = (isAssistant ? message.metadata?.steps ?? [] : [])
@@ -172,7 +172,7 @@ function Message({ message }: { message: AgentMessage }) {
               ? "Zatrzymałem się po 60 sekundach"
               : message.metadata?.stoppedAtToolLimit
                 ? "Zatrzymałem się po 16 wywołaniach narzędzi"
-                : "Zatrzymałem się po 2 krokach"}
+                : "Zatrzymałem się po 6 krokach"}
           </strong>
           {partialResults.length > 0 ? partialResults.map((result, index) => (
             <p key={`${result.name}-${index}`}>
@@ -181,6 +181,7 @@ function Message({ message }: { message: AgentMessage }) {
           )) : <p>Nie udało się uzyskać dodatkowych danych z narzędzi.</p>}
         </section>
       )}
+      {stoppedByUser && <p className="muted interrupted">Przerwane przez użytkownika</p>}
       {isAssistant && !hasContent && message.metadata?.fetchedAt && !stopped && (
         <p className="muted">Nie mam odpowiedzi. Spróbuj zapytać inaczej.</p>
       )}
@@ -221,7 +222,17 @@ export default function Chat({
   imageSuggestions: string[];
 }) {
   const router = useRouter();
-  const { messages, sendMessage, status, error } = useChat<AgentMessage>({ transport });
+  const stopRequestedByUser = useRef(false);
+  const [interruptedMessages, setInterruptedMessages] = useState<Set<string>>(() => new Set());
+  const { messages, sendMessage, status, error, stop } = useChat<AgentMessage>({
+    transport,
+    onFinish: ({ message, isAbort }) => {
+      if (isAbort && stopRequestedByUser.current) {
+        setInterruptedMessages((previous) => new Set(previous).add(message.id));
+      }
+      stopRequestedByUser.current = false;
+    },
+  });
   const [input, setInput] = useState("");
   const [photo, setPhoto] = useState<FileUIPart | null>(null);
   const [photoError, setPhotoError] = useState("");
@@ -242,6 +253,15 @@ export default function Chat({
     sendMessage({ text: text || "Opisz to zdjęcie.", files: photo ? [photo] : undefined });
     setInput("");
     setPhoto(null);
+  }
+
+  function stopAgent() {
+    stopRequestedByUser.current = true;
+    const activeMessage = messages.at(-1);
+    if (activeMessage?.role === "assistant") {
+      setInterruptedMessages((previous) => new Set(previous).add(activeMessage.id));
+    }
+    stop();
   }
 
   // Vision: sprawdzamy plik od razu w przeglądarce i zamieniamy go na adres "data:".
@@ -335,7 +355,7 @@ export default function Chat({
         {imagesAfter(0)}
         {messages.map((message, index) => (
           <div key={message.id} className="turn">
-            <Message message={message} />
+            <Message message={message} stoppedByUser={interruptedMessages.has(message.id)} />
             {imagesAfter(index + 1)}
           </div>
         ))}
@@ -365,6 +385,11 @@ export default function Chat({
         <button type="submit" disabled={busy || (!text && !photo)}>
           Wyślij
         </button>
+        {(status === "submitted" || status === "streaming") && (
+          <button type="button" className="stop-button" onClick={stopAgent}>
+            Stop
+          </button>
+        )}
         <input
           ref={fileInput}
           type="file"

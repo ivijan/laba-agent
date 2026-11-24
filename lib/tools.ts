@@ -3,7 +3,7 @@ import { z } from "zod";
 import { IMAGE_MODEL_ID, MODEL_ID, imageModel, webSearchTool } from "@/lib/model";
 
 // Narzędzia agenta. Opisy podpowiadają modelowi, kiedy warto ich użyć.
-export const MAX_STEPS = 2;
+export const MAX_STEPS = 6;
 export const MAX_TOOL_CALLS = 16;
 export const MAX_TASK_DURATION_MS = 60_000;
 export const MAX_TOOL_DURATION_MS = 10_000;

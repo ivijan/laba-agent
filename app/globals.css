@@ -641,6 +641,10 @@ h2 {
   box-shadow: var(--shadow);
 }
 
+.trip-form.is-comparing {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(180px, 0.6fr);
+}
+
 .trip-form label {
   display: grid;
   gap: 6px;
@@ -651,6 +655,28 @@ h2 {
 
 .trip-form button {
   min-width: 120px;
+}
+
+.trip-form.is-comparing button {
+  grid-column: 3;
+}
+
+.trip-mode {
+  grid-column: 1 / 3;
+  display: flex !important;
+  align-items: center;
+  gap: 9px !important;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.trip-mode input {
+  flex: 0 0 18px;
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .dashboard-error,
@@ -684,6 +710,27 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+}
+
+.comparison-city {
+  min-width: 0;
+}
+
+.comparison-city > h2 {
+  margin: 0 0 12px;
+  color: var(--accent-dark);
+  font-size: 1.35rem;
+}
+
+.comparison-cards {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .travel-card,
@@ -790,7 +837,19 @@ h2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .trip-form.is-comparing {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .trip-form button {
+    grid-column: 1 / -1;
+  }
+
+  .trip-form.is-comparing button {
+    grid-column: 1 / -1;
+  }
+
+  .trip-mode {
     grid-column: 1 / -1;
   }
 
@@ -818,6 +877,10 @@ h2 {
   }
 
   .travel-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .comparison-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -8,10 +8,13 @@ export const maxDuration = 60;
 
 const requestSchema = z.object({
   miasto: z.string().trim().min(2).max(100),
+  miasto2: z.string().trim().min(2).max(100).optional(),
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
     const parsed = new Date(`${value}T00:00:00Z`);
     return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   }),
+}).refine((value) => !value.miasto2 || value.miasto.toLocaleLowerCase() !== value.miasto2.toLocaleLowerCase(), {
+  message: "Podaj dwa różne miasta.",
 });
 
 type BaseResult = { error?: string; pobrano?: string };
@@ -87,10 +90,24 @@ export async function POST(request: Request) {
   const body: unknown = await request.json().catch(() => null);
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) {
-    return Response.json({ error: "Podaj prawidłowe miasto i datę w formacie RRRR-MM-DD." }, { status: 400 });
+    const error = parsed.error.issues.some((issue) => issue.message === "Podaj dwa różne miasta.")
+      ? "Wpisz dwa różne miasta."
+      : "Podaj prawidłowe miasto i datę w formacie RRRR-MM-DD.";
+    return Response.json({ error }, { status: 400 });
   }
 
-  const { miasto, data } = parsed.data;
+  const { miasto, data, miasto2 } = parsed.data;
+  const cities = await Promise.all([
+    getDashboardCity(miasto, data, Boolean(miasto2)),
+    ...(miasto2 ? [getDashboardCity(miasto2, data, true)] : []),
+  ]);
+  if (!miasto2) return Response.json(cities[0]);
+
+  const podsumowanie = await podsumujPorownanie(cities[0], cities[1]);
+  return Response.json({ porownanie: true, data, miasta: cities, podsumowanie });
+}
+
+async function getDashboardCity(miasto: string, data: string, skipSummary = false) {
   const rok = Number(data.slice(0, 4));
   const pogoda = await runTravelTool<WeatherResult>("pogoda", { miasto, dzien: data })
     .catch((): WeatherResult => ({ error: "Źródło nie odpowiada (Open-Meteo). Nie udało się sprawdzić prognozy." }));
@@ -183,7 +200,7 @@ export async function POST(request: Request) {
   let podsumowanie = brakujaceZrodla.length > 0
     ? `Dopasuj bagaż do danych z dostępnych kart. Brak danych z: ${listaBrakow}.`
     : "Sprawdź dane na kartach i przygotuj bagaż do warunków w miejscu docelowym.";
-  if (isModelConfigured()) {
+  if (!skipSummary && isModelConfigured()) {
     try {
       const result = await generateText({
         model: chatModel(),
@@ -203,5 +220,28 @@ export async function POST(request: Request) {
     }
   }
 
-  return Response.json({ miasto: pogoda.miasto || miasto, data, cards, podsumowanie });
+  return { miasto: pogoda.miasto || miasto, data, cards, podsumowanie };
+}
+
+type CityDashboard = Awaited<ReturnType<typeof getDashboardCity>>;
+
+async function podsumujPorownanie(a: CityDashboard, b: CityDashboard): Promise<string> {
+  const liczbaKart = (city: CityDashboard) => city.cards.filter((card) => card.status === "OK").length;
+  const polecane = liczbaKart(a) >= liczbaKart(b) ? a : b;
+  const drugie = polecane === a ? b : a;
+  const fallback = `Polecam ${polecane.miasto}, ponieważ udało się potwierdzić dane z ${liczbaKart(polecane)} z 5 kart; dla ${drugie.miasto} potwierdzono ${liczbaKart(drugie)} z 5 kart.`;
+
+  if (!isModelConfigured()) return fallback;
+  try {
+    const result = await generateText({
+      model: chatModel(),
+      instructions: "Jesteś asystentem podróży. Porównaj dwie destynacje i poleć dokładnie jedną. Napisz po polsku 2–3 zdania. Uzasadnij wybór konkretnymi wartościami z kart obu miast. Korzystaj wyłącznie z przekazanych danych; nie dopowiadaj atrakcji, bezpieczeństwa ani warunków, których nie ma w kartach. Jeśli danych brakuje, powiedz to wprost.",
+      prompt: JSON.stringify({ data: a.data, miasta: [a, b].map(({ miasto, cards }) => ({ miasto, karty: cards })) }),
+      timeout: { totalMs: 15_000 },
+    });
+    const text = result.text.trim();
+    return text && (text.includes(a.miasto) || text.includes(b.miasto)) ? text : fallback;
+  } catch {
+    return fallback;
+  }
 }

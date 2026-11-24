@@ -14,11 +14,19 @@ type DashboardCard = {
   link?: string;
 };
 
-type DashboardResult = {
+type DashboardCityResult = {
   miasto: string;
   data: string;
   cards: DashboardCard[];
+};
+
+type DashboardResult = {
+  data: string;
   podsumowanie: string;
+  miasto?: string;
+  cards?: DashboardCard[];
+  porownanie?: boolean;
+  miasta?: DashboardCityResult[];
 };
 
 const ZRODLA = [
@@ -42,6 +50,8 @@ function dzisiajWPolsce(): string {
 
 export default function Dashboard() {
   const [miasto, setMiasto] = useState("Miami, Florida");
+  const [miasto2, setMiasto2] = useState("Fort Lauderdale, Florida");
+  const [porownaj, setPorownaj] = useState(false);
   const [data, setData] = useState(dzisiajWPolsce);
   const [wynik, setWynik] = useState<DashboardResult | null>(null);
   const [blad, setBlad] = useState("");
@@ -55,7 +65,7 @@ export default function Dashboard() {
     const response = await fetch("/api/dashboard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ miasto, data }),
+      body: JSON.stringify({ miasto, ...(porownaj ? { miasto2 } : {}), data }),
     }).catch(() => null);
     const body = await response?.json().catch(() => null);
     setLadowanie(false);
@@ -70,6 +80,27 @@ export default function Dashboard() {
   function sprawdz(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void pobierzDane();
+  }
+
+  function renderCard(card: DashboardCard) {
+    return (
+      <article className={`travel-card${card.status === "Brak danych" ? " has-error" : ""}`} key={card.id}>
+        <div className="travel-card-heading">
+          <h3>{card.nazwa}</h3>
+          <span className={`card-status${card.status === "Brak danych" ? " is-missing" : ""}`}>{card.status}</span>
+        </div>
+        <p className="travel-value">{card.status === "Brak danych" ? "Brak danych — spróbuj odświeżyć" : card.wartosc}</p>
+        {card.status === "OK" && card.link && (
+          <a className="travel-wiki-link" href={card.link} target="_blank" rel="noreferrer">
+            Czytaj w Wikipedii
+          </a>
+        )}
+        <div className="travel-meta">
+          <span>Źródło: {card.zrodlo}</span>
+          <span>Pobrano: {card.pobrano ?? "—"}</span>
+        </div>
+      </article>
+    );
   }
 
   return (
@@ -87,7 +118,7 @@ export default function Dashboard() {
           </nav>
         </header>
 
-        <form className="trip-form" onSubmit={sprawdz}>
+        <form className={porownaj ? "trip-form is-comparing" : "trip-form"} onSubmit={sprawdz}>
           <label>
             Dokąd jedziesz?
             <input
@@ -100,6 +131,20 @@ export default function Dashboard() {
               disabled={ladowanie}
             />
           </label>
+          {porownaj && (
+            <label>
+              Drugie miasto
+              <input
+                value={miasto2}
+                onChange={(event) => setMiasto2(event.target.value)}
+                placeholder="np. Orlando, Florida"
+                minLength={2}
+                maxLength={100}
+                required
+                disabled={ladowanie}
+              />
+            </label>
+          )}
           <label>
             Kiedy?
             <input
@@ -110,7 +155,16 @@ export default function Dashboard() {
               disabled={ladowanie}
             />
           </label>
-          <button type="submit" disabled={ladowanie || !miasto.trim() || !data}>
+          <label className="trip-mode">
+            <input
+              type="checkbox"
+              checked={porownaj}
+              onChange={(event) => setPorownaj(event.target.checked)}
+              disabled={ladowanie}
+            />
+            <span>Porównaj dwa miasta</span>
+          </label>
+          <button type="submit" disabled={ladowanie || !miasto.trim() || (porownaj && (!miasto2.trim() || miasto2.trim().toLocaleLowerCase() === miasto.trim().toLocaleLowerCase())) || !data}>
             {ladowanie ? "Sprawdzam…" : "Sprawdź"}
           </button>
         </form>
@@ -120,13 +174,20 @@ export default function Dashboard() {
         {ladowanie && (
           <section className="dashboard-results" aria-live="polite">
             <p className="dashboard-loading" role="status">Zbieram dane z pięciu źródeł i przygotowuję podsumowanie…</p>
-            <div className="travel-cards">
-              {ZRODLA.map((card) => (
-                <article className="travel-card is-loading" key={card.id}>
-                  <div className="travel-card-heading"><h3>{card.nazwa}</h3><span className="card-status">Ładuję…</span></div>
-                  <p className="travel-value">Ładuję…</p>
-                  <div className="travel-meta"><span>Źródło: {card.zrodlo}</span><span>Pobrano: —</span></div>
-                </article>
+            <div className={porownaj ? "comparison-grid" : "travel-cards"}>
+              {Array.from({ length: porownaj ? 2 : 1 }, (_, index) => (
+                <section className="comparison-city" key={index}>
+                  {porownaj && <h2>{index === 0 ? miasto : miasto2}</h2>}
+                  <div className={porownaj ? "travel-cards comparison-cards" : "travel-cards"}>
+                    {ZRODLA.map((card) => (
+                      <article className="travel-card is-loading" key={card.id}>
+                        <div className="travel-card-heading"><h3>{card.nazwa}</h3><span className="card-status">Ładuję…</span></div>
+                        <p className="travel-value">Ładuję…</p>
+                        <div className="travel-meta"><span>Źródło: {card.zrodlo}</span><span>Pobrano: —</span></div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           </section>
@@ -136,8 +197,8 @@ export default function Dashboard() {
           <section className="dashboard-results" aria-live="polite">
             <div className="results-heading">
               <div>
-                <span className="dashboard-kicker">PLAN WYJAZDU</span>
-                <h2>{wynik.miasto}</h2>
+                <span className="dashboard-kicker">{wynik.porownanie ? "PORÓWNANIE WYJAZDÓW" : "PLAN WYJAZDU"}</span>
+                {!wynik.porownanie && <h2>{wynik.miasto}</h2>}
                 <p>{wynik.data}</p>
               </div>
               <button type="button" className="ghost refresh-button" onClick={() => void pobierzDane()}>
@@ -145,29 +206,25 @@ export default function Dashboard() {
               </button>
             </div>
 
-            <div className="travel-cards">
-              {wynik.cards.map((card) => (
-                <article className={`travel-card${card.status === "Brak danych" ? " has-error" : ""}`} key={card.id}>
-                  <div className="travel-card-heading">
-                    <h3>{card.nazwa}</h3>
-                    <span className={`card-status${card.status === "Brak danych" ? " is-missing" : ""}`}>{card.status}</span>
-                  </div>
-                  <p className="travel-value">{card.status === "Brak danych" ? "Brak danych — spróbuj odświeżyć" : card.wartosc}</p>
-                  {card.status === "OK" && card.link && (
-                    <a className="travel-wiki-link" href={card.link} target="_blank" rel="noreferrer">
-                      Czytaj w Wikipedii
-                    </a>
-                  )}
-                  <div className="travel-meta">
-                    <span>Źródło: {card.zrodlo}</span>
-                    <span>Pobrano: {card.pobrano ?? "—"}</span>
-                  </div>
-                </article>
-              ))}
-            </div>
+            {wynik.porownanie && wynik.miasta ? (
+              <div className="comparison-grid">
+                {wynik.miasta.map((city) => (
+                  <section className="comparison-city" key={city.miasto}>
+                    <h2>{city.miasto}</h2>
+                    <div className="travel-cards comparison-cards">
+                      {city.cards.map((card) => renderCard(card))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <div className="travel-cards">
+                {(wynik.cards ?? []).map((card) => renderCard(card))}
+              </div>
+            )}
 
             <section className="travel-summary">
-              <span className="dashboard-kicker">PODSUMOWANIE AGENTA</span>
+              <span className="dashboard-kicker">{wynik.porownanie ? "REKOMENDACJA AGENTA" : "PODSUMOWANIE AGENTA"}</span>
               <p>{wynik.podsumowanie}</p>
             </section>
           </section>

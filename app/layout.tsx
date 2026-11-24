@@ -1,8 +1,26 @@
 import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-export const metadata: Metadata = { title: "M\u00f3j chatbot", description: "Chatbot LABA" };
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin", "latin-ext"],
+});
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="pl"><body>{children}</body></html>;
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin", "latin-ext"],
+});
+
+export const metadata: Metadata = {
+  title: "Mój chatbot AI",
+  description: "Projekt z kursu Agenci AI",
+};
+
+export default function RootLayout({ children }: LayoutProps<"/">) {
+  return (
+    <html lang="pl" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body>{children}</body>
+    </html>
+  );
 }

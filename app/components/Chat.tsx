@@ -9,6 +9,7 @@ type ChatMessage = UIMessage<{
   sourceFetchedAt?: string;
   modelId?: string;
   generatedImage?: boolean;
+  stepLimitReached?: boolean;
 }>;
 
 type GeneratedImageToolOutput = {
@@ -222,6 +223,11 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
               }
               return null;
             })}
+            {message.role === "assistant" &&
+              message.metadata?.stepLimitReached &&
+              !message.parts.some((part) => part.type === "text" && part.text.trim()) && (
+                <p className="muted">Przerwałem po 5 krokach</p>
+              )}
             {message.role === "assistant" && message.metadata?.modelId && !message.metadata.generatedImage && (
               <small className="model-label">Model: {message.metadata.modelId}</small>
             )}

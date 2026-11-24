@@ -24,6 +24,7 @@ const MAX_IMAGE_SIZE = 4 * 1024 * 1024;
 type AgentMessageMetadata = {
   sourceFetchedAt?: string;
   modelId?: string;
+  stepLimitReached?: boolean;
 };
 
 type ImageToolOutput =
@@ -100,6 +101,7 @@ export async function POST(req: Request) {
 
   const hasImage = lastMessage?.role === "user" && imageParts.length > 0;
   let usedModelId: string | undefined;
+  let stepLimitReached = false;
 
   const tools = {
     webSearch: openrouter.tools.webSearch({ maxResults: 3, engine: "native" }),
@@ -220,8 +222,9 @@ export async function POST(req: Request) {
     messages: await convertToModelMessages(messages, { tools }),
     tools,
     stopWhen: isStepCount(5),
-    onStepEnd: ({ response }) => {
+    onStepEnd: ({ response, stepNumber, finishReason }) => {
       usedModelId = response.modelId;
+      stepLimitReached = stepNumber >= 4 && finishReason === "tool-calls";
     },
   });
 
@@ -236,6 +239,7 @@ export async function POST(req: Request) {
           ? {
               sourceFetchedAt: new Date().toISOString(),
               ...(hasImage && usedModelId ? { modelId: usedModelId } : {}),
+              ...(stepLimitReached ? { stepLimitReached: true } : {}),
             }
           : undefined,
     }),

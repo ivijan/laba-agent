@@ -2,10 +2,11 @@ import {
   streamText,
   convertToModelMessages,
   createUIMessageStreamResponse,
+  isStepCount,
   toUIMessageStream,
   type UIMessage,
 } from "ai";
-import { chatModel, isModelConfigured } from "@/lib/model";
+import { chatModel, isModelConfigured, openrouter } from "@/lib/model";
 import { INSTRUCTIONS } from "@/lib/persona";
 import { hasSession } from "@/lib/session";
 
@@ -32,9 +33,21 @@ export async function POST(req: Request) {
     model: chatModel(),
     instructions: INSTRUCTIONS,
     messages: await convertToModelMessages(messages),
+    tools: {
+      webSearch: openrouter.tools.webSearch({ maxResults: 3, engine: "native" }),
+    },
+    stopWhen: isStepCount(5),
   });
 
   return createUIMessageStreamResponse({
-    stream: toUIMessageStream({ stream: result.stream }),
+    stream: toUIMessageStream({
+      stream: result.stream,
+      sendSources: true,
+      originalMessages: messages as UIMessage<{ sourceFetchedAt?: string }>[],
+      messageMetadata: ({ part }) =>
+        part.type === "finish"
+          ? { sourceFetchedAt: new Date().toISOString() }
+          : undefined,
+    }),
   });
 }

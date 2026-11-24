@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
+import type { UIMessage } from "ai";
+
+type ChatMessage = UIMessage<{ sourceFetchedAt?: string }>;
 
 type Analysis = {
   category: string;
@@ -13,7 +16,7 @@ type Analysis = {
 
 export default function Chat({ botName, intro }: { botName: string; intro: string }) {
   const router = useRouter();
-  const { messages, sendMessage, status, error } = useChat();
+  const { messages, sendMessage, status, error } = useChat<ChatMessage>();
   const [input, setInput] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analysisError, setAnalysisError] = useState("");
@@ -67,6 +70,31 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
             {message.parts.map((part, index) =>
               part.type === "text" ? <span key={index}>{part.text}</span> : null,
             )}
+            {message.role === "assistant" &&
+              message.parts.some((part) => part.type === "source-url") && (
+                <section className="sources">
+                  <h2>Źródła</h2>
+                  <ul>
+                    {message.parts
+                      .filter((part) => part.type === "source-url")
+                      .map((source) => (
+                        <li key={source.sourceId}>
+                          <a href={source.url} target="_blank" rel="noreferrer">
+                            {source.title ?? source.url}
+                          </a>
+                        </li>
+                      ))}
+                  </ul>
+                  {message.metadata?.sourceFetchedAt && (
+                    <small>
+                      pobrano: {new Intl.DateTimeFormat("pl-PL", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      }).format(new Date(message.metadata.sourceFetchedAt))}
+                    </small>
+                  )}
+                </section>
+              )}
           </div>
         ))}
         {status === "submitted" && <div className="message assistant muted">Piszę…</div>}

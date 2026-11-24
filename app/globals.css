@@ -128,6 +128,27 @@ button:disabled {
   background: var(--bg);
 }
 
+.sources {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.sources h2 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.sources ul {
+  margin: 0 0 6px;
+  padding-left: 20px;
+}
+
+.sources small {
+  color: var(--muted);
+}
+
 .composer {
   display: flex;
   gap: 8px;

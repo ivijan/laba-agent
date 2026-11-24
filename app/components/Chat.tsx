@@ -3,13 +3,20 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
-import type { UIMessage } from "ai";
+import { DefaultChatTransport, type UIMessage } from "ai";
 
 type ChatMessage = UIMessage<{
   sourceFetchedAt?: string;
   modelId?: string;
   generatedImage?: boolean;
 }>;
+
+type GeneratedImageToolOutput = {
+  image?: string;
+  mediaType?: string;
+  modelId?: string;
+  error?: string;
+};
 
 const MAX_IMAGE_SIZE = 4 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -28,18 +35,32 @@ type Analysis = {
 
 export default function Chat({ botName, intro }: { botName: string; intro: string }) {
   const router = useRouter();
-  const { messages, sendMessage, setMessages, status, error } = useChat<ChatMessage>();
+  const { messages, sendMessage, status, error } = useChat<ChatMessage>({
+    transport: new DefaultChatTransport({
+      api: "/api/agent",
+      body: { mode: "chat" },
+    }),
+  });
   const [input, setInput] = useState("");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imageError, setImageError] = useState("");
-  const [generatingImage, setGeneratingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const generationLockRef = useRef(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analysisError, setAnalysisError] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
 
   const busy = status === "submitted" || status === "streaming";
+  const generatingImage = messages.some((message) =>
+    message.parts.some((part) => {
+      if (part.type === "tool-generateImage") {
+        return part.state !== "output-available" && part.state !== "output-error";
+      }
+      return part.type === "dynamic-tool" &&
+        part.toolName === "generateImage" &&
+        part.state !== "output-available" &&
+        part.state !== "output-error";
+    }),
+  );
 
   function send(event: React.FormEvent) {
     event.preventDefault();
@@ -77,48 +98,11 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
     setSelectedImage(file);
   }
 
-  async function generateImage() {
+  function generateImage() {
     const prompt = input.trim();
-    if (!prompt || prompt.length > 500 || busy || generationLockRef.current) return;
-    generationLockRef.current = true;
-    setGeneratingImage(true);
-    setImageError("");
-
-    try {
-      const response = await fetch("/api/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok || !data?.image || !data?.mediaType || !data?.modelId) {
-        setImageError(data?.error ?? "Nie udało się wygenerować obrazu. Spróbuj ponownie.");
-        return;
-      }
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          metadata: { modelId: data.modelId, generatedImage: true },
-          parts: [
-            {
-              type: "file",
-              mediaType: data.mediaType,
-              url: data.image,
-              filename: "wygenerowany-obraz",
-            },
-          ],
-        },
-      ]);
-      setInput("");
-    } catch {
-      setImageError("Nie udało się połączyć z usługą generowania obrazu. Spróbuj ponownie.");
-    } finally {
-      generationLockRef.current = false;
-      setGeneratingImage(false);
-    }
+    if (!prompt || prompt.length > 500 || busy || generatingImage) return;
+    sendMessage({ text: `Wygeneruj obraz na podstawie tego opisu: ${prompt}` });
+    setInput("");
   }
 
   async function analyze() {
@@ -127,10 +111,10 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
     setAnalyzing(true);
     setAnalysis(null);
     setAnalysisError("");
-    const response = await fetch("/api/analyze", {
+    const response = await fetch("/api/agent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ mode: "analyze", text }),
     });
     const data = await response.json().catch(() => null);
     setAnalyzing(false);
@@ -171,6 +155,8 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
                         ? "wyszukiwanie"
                         : name === "disneyPlus"
                           ? "Disney+"
+                          : name === "generateImage"
+                            ? "generowanie obrazu"
                           : name}
                     </span>
                   ))}
@@ -179,6 +165,42 @@ export default function Chat({ botName, intro }: { botName: string; intro: strin
             })()}
             {message.parts.map((part, index) => {
               if (part.type === "text") return <span key={index}>{part.text}</span>;
+              if (part.type === "tool-generateImage" && part.state === "output-available") {
+                const output = part.output as GeneratedImageToolOutput;
+                if (output.error) return <p className="error" key={index}>{output.error}</p>;
+                if (output.image && output.mediaType) {
+                  const extension = output.mediaType === "image/jpeg"
+                    ? "jpg"
+                    : output.mediaType.split("/")[1] ?? "png";
+                  return (
+                    <figure className="chat-image" key={index}>
+                      <img src={output.image} alt="Obraz wygenerowany na prośbę użytkownika" />
+                      {output.modelId && <figcaption>Model: {output.modelId}</figcaption>}
+                      <a className="download-button" href={output.image} download={`obraz.${extension}`}>
+                        Pobierz
+                      </a>
+                    </figure>
+                  );
+                }
+              }
+              if (part.type === "dynamic-tool" && part.toolName === "generateImage" && part.state === "output-available") {
+                const output = part.output as GeneratedImageToolOutput;
+                if (output.error) return <p className="error" key={index}>{output.error}</p>;
+                if (output.image && output.mediaType) {
+                  const extension = output.mediaType === "image/jpeg"
+                    ? "jpg"
+                    : output.mediaType.split("/")[1] ?? "png";
+                  return (
+                    <figure className="chat-image" key={index}>
+                      <img src={output.image} alt="Obraz wygenerowany na prośbę użytkownika" />
+                      {output.modelId && <figcaption>Model: {output.modelId}</figcaption>}
+                      <a className="download-button" href={output.image} download={`obraz.${extension}`}>
+                        Pobierz
+                      </a>
+                    </figure>
+                  );
+                }
+              }
               if (part.type === "file" && part.mediaType.startsWith("image/")) {
                 return (
                   <figure className="chat-image" key={index}>

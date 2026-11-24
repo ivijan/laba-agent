@@ -21,9 +21,16 @@ type GeneratedImage = ImageResult & { id: number; prompt: string; after: number 
 
 // Etykiety narzędzi pokazywane nad odpowiedzią. Dodajesz narzędzie — dopisz je tutaj.
 const TOOL_LABELS: Record<string, string> = {
-  wyszukiwanie: "🔎 wyszukiwanie",
-  aktualnyCzas: "🕒 aktualnyCzas",
-  generujObraz: "🎨 generujObraz",
+  wyszukiwanie: "🔎 Wyszukiwanie",
+  pogoda: "🌤️ Pogoda",
+  waluty: "💱 Waluty",
+  swieta: "📅 Święta",
+  wikipedia: "📚 Wikipedia",
+  kalkulator: "🧮 Kalkulator",
+  czas: "🕒 Czas",
+  notatki: "📝 Notatki",
+  diagnostyka: "🩺 Diagnostyka",
+  generujObraz: "🎨 Obraz",
 };
 
 const ALLOWED_IMAGES = ["image/jpeg", "image/png", "image/webp"];

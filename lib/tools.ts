@@ -1,29 +1,68 @@
 import { generateImage, tool } from "ai";
 import { z } from "zod";
-import { imageModel, webSearchTool } from "@/lib/model";
+import { IMAGE_MODEL_ID, MODEL_ID, imageModel, webSearchTool } from "@/lib/model";
 
-// ============================================================
-// NARZĘDZIA AGENTA.
-// Model sam decyduje, którego użyć — na podstawie opisu (description).
-// Własne narzędzie dodajesz tutaj, a jego etykietę w app/components/Chat.tsx.
-// ============================================================
-
+// Narzędzia agenta. Opisy podpowiadają modelowi, kiedy warto ich użyć.
 export const MAX_STEPS = 5;
 export const MAX_IMAGE_PROMPT = 500;
 
-// Wynik generowania obrazu — w tej postaci trafia do przeglądarki.
+const TOOL_NAMES = [
+  "wyszukiwanie",
+  "pogoda",
+  "waluty",
+  "swieta",
+  "wikipedia",
+  "kalkulator",
+  "czas",
+  "notatki",
+  "diagnostyka",
+  "generujObraz",
+] as const;
+
 export type ImageResult = {
-  image?: string; // obraz jako adres "data:image/png;base64,..."
-  model?: string; // identyfikator modelu z odpowiedzi API
-  error?: string; // komunikat po polsku, gdy się nie udało
+  image?: string;
+  model?: string;
+  error?: string;
+  pobrano?: string;
 };
 
-// Dodatkowe informacje o odpowiedzi, które serwer dosyła do przeglądarki.
 export type AgentMetadata = {
-  model?: string; // model, który faktycznie odpowiedział
-  fetchedAt?: string; // data i godzina odpowiedzi (dla listy „Źródła”)
-  stoppedAtLimit?: boolean; // agent doszedł do limitu kroków
+  model?: string;
+  fetchedAt?: string;
+  stoppedAtLimit?: boolean;
 };
+
+function pobrano(): string {
+  return new Date().toLocaleString("pl-PL", {
+    timeZone: "Europe/Warsaw",
+    dateStyle: "short",
+    timeStyle: "medium",
+  });
+}
+
+type FetchResult<T> = { ok: true; data: T } | { ok: false; status?: number };
+
+async function pobierzJson<T>(url: string, headers?: HeadersInit): Promise<FetchResult<T>> {
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return { ok: false, status: response.status };
+    const data: unknown = await response.json();
+    if (data === null || typeof data !== "object") return { ok: false, status: 502 };
+    return { ok: true, data: data as T };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function prawidlowaData(data: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return false;
+  const parsed = new Date(`${data}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === data;
+}
 
 // Wspólna funkcja: używa jej endpoint /api/image oraz narzędzie generujObraz.
 export async function createImage(prompt: string): Promise<ImageResult> {
@@ -32,31 +71,321 @@ export async function createImage(prompt: string): Promise<ImageResult> {
     return {
       image: `data:${result.image.mediaType};base64,${result.image.base64}`,
       model: result.calls[0]?.response.modelId,
+      pobrano: pobrano(),
     };
   } catch {
     return {
       error: "Nie udało się wygenerować obrazu. Model obrazów może być teraz niedostępny — spróbuj za chwilę.",
+      pobrano: pobrano(),
     };
   }
 }
 
-// Function calling: zwykła funkcja napisana przez nas.
-const aktualnyCzas = tool({
+const pogoda = tool({
   description:
-    "Zwraca dzisiejszą datę, dzień tygodnia i godzinę w Polsce (strefa Europe/Warsaw). " +
-    "Użyj zawsze, gdy pytanie zależy od bieżącej daty lub godziny: „dziś”, „jutro”, „wczoraj”, " +
-    "„za ile dni”, „który dziś dzień”, „ile zostało do…”. Nie zgaduj daty z pamięci.",
-  inputSchema: z.object({}),
-  execute: async () => {
-    const now = new Date();
-    const format = (options: Intl.DateTimeFormatOptions) =>
-      new Intl.DateTimeFormat("pl-PL", { timeZone: "Europe/Warsaw", ...options }).format(now);
-    return {
-      data: format({ year: "numeric", month: "long", day: "numeric" }),
-      dzienTygodnia: format({ weekday: "long" }),
-      godzina: format({ hour: "2-digit", minute: "2-digit" }),
-      strefa: "Europe/Warsaw",
+    "Sprawdza prognozę pogody w mieście dla konkretnego dnia. Użyj, gdy użytkownik pyta o pogodę lub planuje dzień. " +
+    "Podaj miasto i datę w formacie RRRR-MM-DD; przy niejednoznacznym mieście dopisz region lub kraj. " +
+    "Dla słów typu jutro najpierw ustal datę narzędziem czas. Prognoza Open-Meteo obejmuje maksymalnie 16 dni.",
+  inputSchema: z.object({
+    miasto: z.string().trim().min(2).max(100).describe("Miasto; dopisz region lub kraj, gdy nazwa jest niejednoznaczna"),
+    dzien: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("Dzień prognozy w formacie RRRR-MM-DD"),
+  }),
+  execute: async ({ miasto, dzien }) => {
+    const pobranoO = pobrano();
+    if (!prawidlowaData(dzien)) return { error: "Podaj prawidłową datę w formacie RRRR-MM-DD.", pobrano: pobranoO };
+
+    const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
+    geocodeUrl.search = new URLSearchParams({ name: miasto, count: "1", language: "pl", format: "json" }).toString();
+    const geocode = await pobierzJson<{
+      results?: Array<{
+        name: string;
+        country?: string;
+        admin1?: string;
+        latitude: number;
+        longitude: number;
+        timezone?: string;
+      }>;
+    }>(geocodeUrl.toString());
+    if (!geocode.ok) {
+      return { error: "Nie udało się połączyć z wyszukiwarką miast Open-Meteo. Spróbuj ponownie za chwilę.", pobrano: pobranoO };
+    }
+
+    const miejsce = geocode.data.results?.[0];
+    if (!miejsce) return { error: `Nie znalazłem miasta „${miasto}”. Podaj nazwę wraz z regionem lub krajem.`, pobrano: pobranoO };
+
+    const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
+    forecastUrl.search = new URLSearchParams({
+      latitude: String(miejsce.latitude),
+      longitude: String(miejsce.longitude),
+      daily: "weather_code,temperature_2m_min,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max",
+      timezone: "auto",
+      start_date: dzien,
+      end_date: dzien,
+    }).toString();
+    const forecast = await pobierzJson<{
+      daily?: {
+        time?: string[];
+        weather_code?: number[];
+        temperature_2m_min?: number[];
+        temperature_2m_max?: number[];
+        precipitation_probability_max?: number[];
+        wind_speed_10m_max?: number[];
+      };
+    }>(forecastUrl.toString());
+    if (!forecast.ok) {
+      const error = forecast.status === 400 || forecast.status === 404
+        ? "Brak prognozy dla tego dnia. Open-Meteo udostępnia prognozę do 16 dni naprzód."
+        : "Serwis pogodowy Open-Meteo nie odpowiada. Spróbuj ponownie za chwilę.";
+      return { error, pobrano: pobranoO };
+    }
+
+    const daily = forecast.data.daily;
+    if (!daily || !Array.isArray(daily.time)) {
+      return { error: "Serwis pogodowy zwrócił niepełną prognozę.", pobrano: pobranoO };
+    }
+    const index = daily.time.indexOf(dzien);
+    if (!daily || index < 0 || daily.weather_code?.[index] === undefined) {
+      return { error: "Nie ma prognozy dla tego miasta i dnia.", pobrano: pobranoO };
+    }
+
+    const opisyPogody: Record<number, string> = {
+      0: "bezchmurnie",
+      1: "przeważnie pogodnie",
+      2: "częściowe zachmurzenie",
+      3: "pochmurno",
+      45: "mgła",
+      48: "mgła osadzająca szadź",
+      51: "lekka mżawka",
+      53: "mżawka",
+      55: "silna mżawka",
+      56: "marznąca mżawka",
+      57: "silna marznąca mżawka",
+      61: "lekki deszcz",
+      63: "deszcz",
+      65: "silny deszcz",
+      66: "marznący deszcz",
+      67: "silny marznący deszcz",
+      71: "lekki śnieg",
+      73: "śnieg",
+      75: "silny śnieg",
+      77: "ziarna śniegu",
+      80: "przelotny deszcz",
+      81: "przelotny deszcz",
+      82: "ulewne przelotne opady",
+      85: "przelotny śnieg",
+      86: "silny przelotny śnieg",
+      95: "burza",
+      96: "burza z gradem",
+      99: "silna burza z gradem",
     };
+    return {
+      miasto: [miejsce.name, miejsce.admin1, miejsce.country].filter(Boolean).join(", "),
+      dzien,
+      opis: opisyPogody[daily.weather_code[index]] ?? "nieznane warunki pogodowe",
+      temperaturaMinC: daily.temperature_2m_min?.[index],
+      temperaturaMaxC: daily.temperature_2m_max?.[index],
+      prawdopodobienstwoOpadowProc: daily.precipitation_probability_max?.[index],
+      wiatrMaxKmh: daily.wind_speed_10m_max?.[index],
+      strefa: miejsce.timezone,
+      pobrano: pobranoO,
+    };
+  },
+});
+
+const waluty = tool({
+  description:
+    "Sprawdza aktualny kurs średni waluty wobec polskiego złotego i przelicza kwotę w obie strony. " +
+    "Użyj przy pytaniach o kurs lub przeliczenie pieniędzy. Podaj trzyliterowy kod ISO 4217, np. EUR albo USD, kwotę i kierunek. " +
+    "Kurs pochodzi z aktualnej tabeli A NBP; podaj datę publikacji kursu.",
+  inputSchema: z.object({
+    waluta: z.string().trim().regex(/^[A-Za-z]{3}$/).describe("Trzyliterowy kod waluty ISO 4217, np. EUR, USD, GBP"),
+    kwota: z.number().finite().min(0).max(1_000_000_000_000).describe("Kwota do przeliczenia; walutą wejściową jest waluta lub PLN zależnie od kierunku"),
+    kierunek: z.enum(["waluta_na_pln", "pln_na_walute"]).optional().describe("Kierunek konwersji; domyślnie waluta_na_pln"),
+  }),
+  execute: async ({ waluta, kwota, kierunek }) => {
+    const kod = waluta.toUpperCase();
+    const pobranoO = pobrano();
+    const kierunekKonwersji = kierunek ?? "waluta_na_pln";
+    const walutaWejsciowa = kierunekKonwersji === "pln_na_walute" ? "PLN" : kod;
+    const walutaWynikowa = kierunekKonwersji === "pln_na_walute" ? kod : "PLN";
+    if (kod === "PLN") {
+      return {
+        walutaWejsciowa: "PLN",
+        kwotaWejsciowa: kwota,
+        walutaWynikowa: "PLN",
+        kwotaWynikowa: Number(kwota.toFixed(2)),
+        kursPLN: 1,
+        dataKursu: pobranoO.slice(0, 10),
+        pobrano: pobranoO,
+      };
+    }
+
+    const url = `https://api.nbp.pl/api/exchangerates/rates/A/${encodeURIComponent(kod)}/?format=json`;
+    const result = await pobierzJson<{ rates?: Array<{ mid?: number; effectiveDate?: string }> }>(url, { Accept: "application/json" });
+    if (!result.ok) {
+      const error = result.status === 404
+        ? `NBP nie ma aktualnego kursu waluty ${kod}. Sprawdź kod albo wybierz walutę publikowaną w tabeli A.`
+        : "Serwis kursów walut NBP nie odpowiada. Spróbuj ponownie za chwilę.";
+      return { error, pobrano: pobranoO };
+    }
+    const kurs = result.data.rates?.[0];
+    if (typeof kurs?.mid !== "number") return { error: `NBP nie zwrócił kursu waluty ${kod}.`, pobrano: pobranoO };
+    const kwotaWynikowa = kierunekKonwersji === "pln_na_walute" ? kwota / kurs.mid : kwota * kurs.mid;
+    return {
+      walutaWejsciowa,
+      kwotaWejsciowa: kwota,
+      walutaWynikowa,
+      kwotaWynikowa: Number(kwotaWynikowa.toFixed(2)),
+      kursPLN: kurs.mid,
+      dataKursu: kurs.effectiveDate,
+      pobrano: pobranoO,
+    };
+  },
+});
+
+const swieta = tool({
+  description:
+    "Zwraca publiczne dni wolne od pracy w kraju i roku wskazanym przez użytkownika. " +
+    "Użyj do pytań o święta i dni ustawowo wolne. Kraj podaj jako dwuliterowy kod ISO 3166-1 alpha-2, np. PL, US, GB; rok jako liczbę. " +
+    "Wynik może zawierać święta regionalne — zaznacz, gdy nie obowiązują w całym kraju.",
+  inputSchema: z.object({
+    kraj: z.string().trim().regex(/^[A-Za-z]{2}$/).describe("Dwuliterowy kod kraju ISO 3166-1 alpha-2, np. PL, US, GB"),
+    rok: z.number().int().min(1900).max(2100).describe("Rok, dla którego pobrać dni wolne"),
+  }),
+  execute: async ({ kraj, rok }) => {
+    const kod = kraj.toUpperCase();
+    const pobranoO = pobrano();
+    const url = `https://date.nager.at/api/v3/PublicHolidays/${rok}/${encodeURIComponent(kod)}`;
+    const result = await pobierzJson<Array<{
+      date: string;
+      localName?: string;
+      name?: string;
+      global?: boolean;
+      counties?: string[] | null;
+      types?: string[];
+    }>>(url, { Accept: "application/json" });
+    if (!result.ok) {
+      const error = result.status === 404
+        ? `Nie znaleziono danych świątecznych dla kraju ${kod} i roku ${rok}. Sprawdź kod kraju.`
+        : "Serwis Nager.Date nie odpowiada. Spróbuj ponownie za chwilę.";
+      return { error, pobrano: pobranoO };
+    }
+    if (!Array.isArray(result.data)) return { error: "Serwis Nager.Date zwrócił nieprawidłową listę świąt.", pobrano: pobranoO };
+    return {
+      kraj: kod,
+      rok,
+      dniWolne: result.data
+        .filter((holiday) => !holiday.types || holiday.types.includes("Public"))
+        .map((holiday) => ({
+          data: holiday.date,
+          nazwa: holiday.localName || holiday.name || "Święto",
+          ...(holiday.global === false && holiday.counties?.length ? { regiony: holiday.counties } : {}),
+        })),
+      pobrano: pobranoO,
+    };
+  },
+});
+
+const wikipedia = tool({
+  description:
+    "Wyszukuje hasło w polskiej Wikipedii i zwraca krótkie streszczenie oraz link do artykułu. " +
+    "Użyj, gdy użytkownik chce poznać definicję, tło lub podstawowe informacje o konkretnym temacie. " +
+    "Nie zastępuj tym narzędziem aktualnego wyszukiwania wiadomości ani kursów.",
+  inputSchema: z.object({
+    haslo: z.string().trim().min(1).max(120).describe("Tytuł hasła do sprawdzenia w polskiej Wikipedii"),
+  }),
+  execute: async ({ haslo }) => {
+    const pobranoO = pobrano();
+    const tytul = haslo.trim().replace(/\s+/g, "_");
+    const url = `https://pl.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(tytul)}`;
+    const result = await pobierzJson<{
+      title?: string;
+      description?: string;
+      extract?: string;
+      content_urls?: { desktop?: { page?: string } };
+    }>(url, { Accept: "application/json", "User-Agent": "laba-agent/1.0 (Wikipedia summary tool)" });
+    if (!result.ok) {
+      const error = result.status === 404
+        ? `Nie znalazłem hasła „${haslo}” w polskiej Wikipedii.`
+        : "Polska Wikipedia nie odpowiada. Spróbuj ponownie za chwilę.";
+      return { error, pobrano: pobranoO };
+    }
+    const artykul = result.data;
+    return {
+      haslo: artykul.title ?? haslo,
+      opis: artykul.description,
+      streszczenie: artykul.extract?.slice(0, 1800) || "To hasło nie ma krótkiego streszczenia.",
+      link: artykul.content_urls?.desktop?.page ?? `https://pl.wikipedia.org/wiki/${encodeURIComponent(tytul)}`,
+      pobrano: pobranoO,
+    };
+  },
+});
+
+const kalkulator = tool({
+  description:
+    "Wykonuje proste, dokładne działania na dwóch podanych liczbach. Użyj do dodawania, odejmowania, mnożenia lub dzielenia. " +
+    "Liczby i działanie przekaż jako osobne argumenty; nigdy nie wykonuje tekstu ani kodu podanego przez użytkownika.",
+  inputSchema: z.object({
+    a: z.number().finite().min(-1_000_000_000_000).max(1_000_000_000_000).describe("Pierwsza liczba"),
+    dzialanie: z.enum(["dodaj", "odejmij", "pomnoz", "podziel"]).describe("Rodzaj działania"),
+    b: z.number().finite().min(-1_000_000_000_000).max(1_000_000_000_000).describe("Druga liczba"),
+  }),
+  execute: async ({ a, dzialanie, b }) => {
+    const pobranoO = pobrano();
+    if (dzialanie === "podziel" && b === 0) return { error: "Nie można dzielić przez zero.", pobrano: pobranoO };
+    const wynik = dzialanie === "dodaj" ? a + b : dzialanie === "odejmij" ? a - b : dzialanie === "pomnoz" ? a * b : a / b;
+    if (!Number.isFinite(wynik)) return { error: "Wynik wykracza poza obsługiwany zakres liczb.", pobrano: pobranoO };
+    return { a, dzialanie, b, wynik, pobrano: pobranoO };
+  },
+});
+
+const czas = tool({
+  description:
+    "Zwraca aktualną datę, dzień tygodnia i godzinę w podanej strefie czasowej IANA, np. Europe/Warsaw lub America/New_York. " +
+    "Używaj zawsze, gdy pytanie zależy od teraz, dziś, jutra, wczoraj, terminu lub różnicy stref czasowych. " +
+    "Jeśli użytkownik nie poda strefy, przyjmij Europe/Warsaw. Nie zgaduj daty z pamięci.",
+  inputSchema: z.object({
+    strefa: z.string().trim().min(1).max(100).optional().describe("Strefa IANA, np. Europe/Warsaw; domyślnie Europe/Warsaw"),
+  }),
+  execute: async ({ strefa }) => {
+    const zona = strefa?.trim() || "Europe/Warsaw";
+    const now = new Date();
+    try {
+      const format = (options: Intl.DateTimeFormatOptions) =>
+        new Intl.DateTimeFormat("pl-PL", { timeZone: zona, ...options }).format(now);
+      return {
+        data: format({ year: "numeric", month: "long", day: "numeric" }),
+        dzienTygodnia: format({ weekday: "long" }),
+        godzina: format({ hour: "2-digit", minute: "2-digit" }),
+        strefa: zona,
+        pobrano: pobrano(),
+      };
+    } catch {
+      return { error: `Nie rozpoznaję strefy „${zona}”. Podaj nazwę IANA, np. Europe/Warsaw.`, pobrano: pobrano() };
+    }
+  },
+});
+
+const noteGlobal = globalThis as typeof globalThis & { __labaAgentNotes?: string[] };
+const zapisaneNotatki = (noteGlobal.__labaAgentNotes ??= []);
+
+const notatki = tool({
+  description:
+    "Zapisuje notatkę w tymczasowej pamięci serwera albo pokazuje zapisane notatki. " +
+    "Użyj tylko, gdy użytkownik prosi o zapamiętanie/zapisanie czegoś lub o pokazanie notatek. " +
+    "Wybierz akcję zapisz lub pokaz. Notatki znikną po restarcie serwera i nie są trwałym archiwum.",
+  inputSchema: z.object({
+    akcja: z.enum(["zapisz", "pokaz"]).describe("Czy zapisać nową notatkę, czy pokazać zapisane"),
+    tresc: z.string().trim().min(1).max(1000).optional().describe("Treść nowej notatki; wymagane dla akcji zapisz"),
+  }),
+  execute: async ({ akcja, tresc }) => {
+    const pobranoO = pobrano();
+    if (akcja === "pokaz") return { notatki: [...zapisaneNotatki], liczba: zapisaneNotatki.length, pobrano: pobranoO };
+    const trescNotatki = tresc?.trim();
+    if (!trescNotatki) return { error: "Podaj treść notatki do zapisania.", pobrano: pobranoO };
+    if (zapisaneNotatki.length >= 100) return { error: "Osiągnięto limit 100 notatek w pamięci serwera.", pobrano: pobranoO };
+    zapisaneNotatki.push(trescNotatki);
+    return { zapisano: trescNotatki, liczba: zapisaneNotatki.length, pobrano: pobranoO };
   },
 });
 
@@ -68,15 +397,41 @@ const generujObraz = tool({
     opis: z.string().min(1).max(MAX_IMAGE_PROMPT).describe("Dokładny opis obrazu: co na nim jest, styl, kolory"),
   }),
   execute: async ({ opis }) => createImage(opis),
-  // Do przeglądarki idzie cały obraz, ale do modelu wraca tylko krótki tekst.
   toModelOutput: ({ output }) => ({
     type: "text",
     value: output.error ? `Błąd: ${output.error}` : "obraz wygenerowany",
   }),
 });
 
+const diagnostyka = tool({
+  description:
+    "Pokazuje informacje diagnostyczne aplikacji, gdy użytkownik pyta o model, narzędzia, ich limity lub konfigurację. " +
+    "Zwraca nazwy modeli, listę aktywnych narzędzi, limit kroków i wyłącznie statusy tak/nie dla wymaganych zmiennych. " +
+    "Nigdy nie pokazuj ani nie streszczaj wartości kluczy, haseł lub sekretów.",
+  inputSchema: z.object({}),
+  execute: async () => ({
+    model: MODEL_ID,
+    modelObrazow: IMAGE_MODEL_ID,
+    narzedzia: TOOL_NAMES,
+    limitKrokow: MAX_STEPS,
+    zmienneSrodowiskowe: {
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? "tak" : "nie",
+      CHAT_PASSWORD: process.env.CHAT_PASSWORD ? "tak" : "nie",
+      SESSION_SECRET: process.env.SESSION_SECRET ? "tak" : "nie",
+    },
+    pobrano: pobrano(),
+  }),
+});
+
 export const agentTools = {
   wyszukiwanie: webSearchTool(),
-  aktualnyCzas,
+  pogoda,
+  waluty,
+  swieta,
+  wikipedia,
+  kalkulator,
+  czas,
+  notatki,
+  diagnostyka,
   generujObraz,
 };

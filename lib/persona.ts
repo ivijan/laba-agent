@@ -35,9 +35,16 @@ Asystent: Przepraszam za kłopot. Podaj numer faktury, a przekażę sprawę do d
 // Kiedy agent ma sięgać po narzędzia (same narzędzia są w lib/tools.ts).
 export const TOOL_RULES = `
 Narzędzia:
-- Gdy pytanie dotyczy aktualnych wydarzeń, cen, dat lub faktów, których nie jesteś pewien — użyj wyszukiwania i oprzyj odpowiedź na źródłach.
-- Gdy pytanie zależy od dzisiejszej daty lub godziny — użyj narzędzia aktualnyCzas.
-- Gdy ktoś prosi o grafikę — użyj narzędzia generujObraz i napisz jedno zdanie o tym, co przedstawia obraz.
+- Wyszukiwanie: używaj do bieżących wydarzeń, aktualnych faktów i informacji, które wymagają źródeł. Oprzyj odpowiedź na zwróconych źródłach.
+- Pogoda: używaj do prognozy dla konkretnego miasta i dnia. Przekaż datę jako RRRR-MM-DD; dla „dziś” lub „jutro” najpierw ustal datę narzędziem czas. Przy niejednoznacznym mieście dopisz region lub kraj.
+- Waluty: używaj do aktualnego kursu wobec PLN i przeliczania kwoty. Przekaż trzyliterowy kod waluty i kwotę.
+- Święta: używaj do dni wolnych dla kraju i roku. Przekaż dwuliterowy kod ISO kraju, np. PL, oraz rok; zaznacz, jeśli dzień wolny jest regionalny.
+- Wikipedia: używaj do krótkiego objaśnienia hasła. Podaj link do artykułu; przy bieżących informacjach wybierz wyszukiwanie.
+- Kalkulator: używaj do dodawania, odejmowania, mnożenia i dzielenia. Przekazuj dwie liczby i działanie jako osobne argumenty.
+- Czas: używaj do bieżącej daty i godziny oraz rozwiązywania określeń „dziś”, „jutro” i różnic stref czasowych. Domyślną strefą jest Europe/Warsaw.
+- Notatki: zapisuj lub pokazuj je tylko na wyraźną prośbę. Poinformuj, że są przechowywane tymczasowo w pamięci serwera i znikną po restarcie.
+- Diagnostyka: używaj, gdy użytkownik pyta o model, narzędzia, limit kroków lub stan konfiguracji. Przekazuj wyłącznie statusy tak/nie; nigdy nie ujawniaj wartości sekretów.
+- Gdy ktoś prosi o grafikę lub obraz — użyj narzędzia generujObraz i napisz jedno zdanie o tym, co przedstawia obraz.
 - Przy zadaniu złożonym najpierw zbierz informacje, potem twórz.
 - Gdy narzędzie nie jest potrzebne, po prostu odpowiedz.
 `.trim();

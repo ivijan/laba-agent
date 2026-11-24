@@ -1,80 +1,101 @@
 :root {
   color-scheme: light;
-  --bg: #f5f6fb;
+  --bg: #f2f7fb;
   --card: #ffffff;
   --input-bg: #ffffff;
-  --panel-bg: #fafaff;
-  --assistant-bg: #f8f8fc;
-  --text: #202238;
-  --muted: #696c81;
-  --accent: #6257d9;
-  --accent-dark: #4b42bc;
-  --accent-soft: #f0efff;
-  --border: #e6e7f0;
-  --card-border: rgb(226 227 239 / 90%);
-  --tag-bg: #f0efff;
-  --tag-border: #dedcff;
-  --tag-text: #5148b5;
-  --chip-text: #4c4d63;
-  --placeholder: #696c81;
-  --hover-border: #c9c5ff;
-  --error: #b93848;
-  --glow-one: rgb(226 224 255 / 58%);
-  --glow-two: rgb(230 237 255 / 68%);
-  --shadow: 0 24px 70px rgb(38 34 87 / 10%), 0 2px 8px rgb(38 34 87 / 4%);
+  --panel-bg: #edf4f8;
+  --assistant-bg: #f5f9fc;
+  --text: #17283f;
+  --muted: #51647a;
+  --accent: #087e8b;
+  --accent-dark: #086d78;
+  --accent-hover: #07646e;
+  --action-text: #ffffff;
+  --user-bg: #087e8b;
+  --user-text: #ffffff;
+  --accent-soft: #e0f5f5;
+  --border: #d5e2eb;
+  --card-border: #d5e2eb;
+  --tag-bg: #ffebf4;
+  --tag-border: #f3bfd7;
+  --tag-text: #8b1c54;
+  --chip-text: #34475e;
+  --placeholder: #53677e;
+  --hover-border: #83c8d0;
+  --focus: #d92d7a;
+  --brand-start: #087e8b;
+  --brand-end: #d92d7a;
+  --error: #a6293e;
+  --glow-one: rgb(53 230 232 / 20%);
+  --glow-two: rgb(255 85 165 / 14%);
+  --shadow: 0 24px 70px rgb(16 46 70 / 12%), 0 2px 8px rgb(16 46 70 / 5%);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #11121a;
-  --card: #1b1c27;
-  --input-bg: #22232f;
-  --panel-bg: #20212e;
-  --assistant-bg: #232430;
-  --text: #f2f1fb;
-  --muted: #b9bacb;
-  --accent: #6257d9;
-  --accent-dark: #c0baff;
-  --accent-soft: #2a2746;
-  --border: #3a3b4b;
-  --card-border: #333442;
-  --tag-bg: #2d294c;
-  --tag-border: #514b7e;
-  --tag-text: #d2ceff;
-  --chip-text: #e1e0ed;
-  --placeholder: #b4b5c5;
-  --hover-border: #746bc0;
-  --error: #ff9aa3;
-  --glow-one: rgb(86 74 165 / 18%);
-  --glow-two: rgb(47 66 128 / 18%);
-  --shadow: 0 24px 70px rgb(0 0 0 / 36%), 0 2px 8px rgb(0 0 0 / 20%);
+  --bg: #101522;
+  --card: #1b2340;
+  --input-bg: #151c32;
+  --panel-bg: #171f38;
+  --assistant-bg: #202945;
+  --text: #f5f4ff;
+  --muted: #c1cbe0;
+  --accent: #35e6e8;
+  --accent-dark: #35e6e8;
+  --accent-hover: #67f0f0;
+  --action-text: #101522;
+  --user-bg: #ff55a5;
+  --user-text: #101522;
+  --accent-soft: #26334e;
+  --border: #3a4964;
+  --card-border: #35435d;
+  --tag-bg: #40243f;
+  --tag-border: #754067;
+  --tag-text: #ffacd2;
+  --chip-text: #e6eafa;
+  --placeholder: #b8c4dc;
+  --hover-border: #58d7dc;
+  --focus: #ff55a5;
+  --brand-start: #35e6e8;
+  --brand-end: #ff55a5;
+  --error: #ff9aa9;
+  --glow-one: rgb(53 230 232 / 12%);
+  --glow-two: rgb(255 85 165 / 11%);
+  --shadow: 0 24px 70px rgb(0 0 0 / 42%), 0 2px 8px rgb(0 0 0 / 22%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #11121a;
-    --card: #1b1c27;
-    --input-bg: #22232f;
-    --panel-bg: #20212e;
-    --assistant-bg: #232430;
-    --text: #f2f1fb;
-    --muted: #b9bacb;
-    --accent: #6257d9;
-    --accent-dark: #c0baff;
-    --accent-soft: #2a2746;
-    --border: #3a3b4b;
-    --card-border: #333442;
-    --tag-bg: #2d294c;
-    --tag-border: #514b7e;
-    --tag-text: #d2ceff;
-    --chip-text: #e1e0ed;
-    --placeholder: #b4b5c5;
-    --hover-border: #746bc0;
-    --error: #ff9aa3;
-    --glow-one: rgb(86 74 165 / 18%);
-    --glow-two: rgb(47 66 128 / 18%);
-    --shadow: 0 24px 70px rgb(0 0 0 / 36%), 0 2px 8px rgb(0 0 0 / 20%);
+    --bg: #101522;
+    --card: #1b2340;
+    --input-bg: #151c32;
+    --panel-bg: #171f38;
+    --assistant-bg: #202945;
+    --text: #f5f4ff;
+    --muted: #c1cbe0;
+    --accent: #35e6e8;
+    --accent-dark: #35e6e8;
+    --accent-hover: #67f0f0;
+    --action-text: #101522;
+    --user-bg: #ff55a5;
+    --user-text: #101522;
+    --accent-soft: #26334e;
+    --border: #3a4964;
+    --card-border: #35435d;
+    --tag-bg: #40243f;
+    --tag-border: #754067;
+    --tag-text: #ffacd2;
+    --chip-text: #e6eafa;
+    --placeholder: #b8c4dc;
+    --hover-border: #58d7dc;
+    --focus: #ff55a5;
+    --brand-start: #35e6e8;
+    --brand-end: #ff55a5;
+    --error: #ff9aa9;
+    --glow-one: rgb(53 230 232 / 12%);
+    --glow-two: rgb(255 85 165 / 11%);
+    --shadow: 0 24px 70px rgb(0 0 0 / 42%), 0 2px 8px rgb(0 0 0 / 22%);
   }
 }
 
@@ -109,23 +130,25 @@ button {
   border: 1px solid var(--accent);
   border-radius: 12px;
   background: var(--accent);
-  color: #fff;
-  font-weight: 650;
+  color: var(--action-text);
+  font-family: var(--font-barlow-condensed), sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.015em;
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--accent-dark);
-  background: var(--accent-dark);
-  box-shadow: 0 5px 14px rgb(98 87 217 / 18%);
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  box-shadow: 0 5px 14px rgb(53 230 232 / 18%);
   transform: translateY(-1px);
 }
 
 button:focus-visible,
 a:focus-visible,
 input:focus-visible {
-  outline: 3px solid rgb(98 87 217 / 28%);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -247,11 +270,13 @@ input::placeholder {
 h1 {
   font-size: 1.35rem;
   letter-spacing: -0.035em;
+  font-family: var(--font-barlow-condensed), sans-serif;
 }
 
 h2 {
   margin: 0 0 10px;
   font-size: 1rem;
+  font-family: var(--font-barlow-condensed), sans-serif;
 }
 
 .muted {
@@ -299,11 +324,12 @@ h2 {
   display: grid;
   place-items: center;
   border-radius: 16px;
-  background: linear-gradient(145deg, #756bea, #5549c9);
-  color: #fff;
+  background: linear-gradient(145deg, var(--brand-start), var(--brand-end));
+  color: var(--action-text);
+  font-family: var(--font-barlow-condensed), sans-serif;
   font-size: 1.05rem;
   font-weight: 800;
-  box-shadow: 0 6px 14px rgb(98 87 217 / 22%);
+  box-shadow: 0 6px 14px rgb(53 230 232 / 22%);
 }
 
 .brand-copy {
@@ -362,8 +388,8 @@ h2 {
 .message.user {
   align-self: flex-end;
   border-bottom-right-radius: 7px;
-  background: var(--accent);
-  color: #fff;
+  background: var(--user-bg);
+  color: var(--user-text);
 }
 
 .message.assistant {
@@ -374,7 +400,7 @@ h2 {
 }
 
 .message.user .small {
-  color: #fff;
+  color: var(--user-text);
 }
 
 .composer {
@@ -457,7 +483,8 @@ h2 {
   background: var(--tag-bg);
   color: var(--tag-text);
   font-size: 0.74rem;
-  font-weight: 650;
+  font-family: var(--font-barlow-condensed), sans-serif;
+  font-weight: 700;
   line-height: 1.5;
 }
 

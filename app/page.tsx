@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { hasSession } from "@/lib/session";
-import { BOT_INTRO, BOT_NAME } from "@/lib/persona";
+import { BOT_INTRO, BOT_NAME, IMAGE_SUGGESTIONS } from "@/lib/persona";
 import Chat from "./components/Chat";
 import Login from "./components/Login";
 
@@ -9,7 +9,11 @@ import Login from "./components/Login";
 async function Gate() {
   await connection(); // ta część strony powstaje przy każdym wejściu, nie podczas budowania
   const loggedIn = await hasSession();
-  return loggedIn ? <Chat botName={BOT_NAME} intro={BOT_INTRO} /> : <Login botName={BOT_NAME} />;
+  return loggedIn ? (
+    <Chat botName={BOT_NAME} intro={BOT_INTRO} imageSuggestions={IMAGE_SUGGESTIONS} />
+  ) : (
+    <Login botName={BOT_NAME} />
+  );
 }
 
 export default function Home() {

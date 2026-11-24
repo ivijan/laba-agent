@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ThemeToggle } from "./ThemeProvider";
 
 export default function Login({ botName }: { botName: string }) {
   const router = useRouter();
@@ -29,7 +30,10 @@ export default function Login({ botName }: { botName: string }) {
 
   return (
     <form className="card login" onSubmit={submit}>
-      <h1>{botName}</h1>
+      <header className="login-header">
+        <h1>{botName}</h1>
+        <ThemeToggle />
+      </header>
       <p className="muted">Podaj hasło, żeby wejść do czatu.</p>
       <input
         type="password"

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isToolUIPart, type FileUIPart, type UIMessage } from "ai";
 import type { AgentMetadata, ImageResult } from "@/lib/tools";
+import { ThemeToggle } from "./ThemeProvider";
 
 type Analysis = {
   category: string;
@@ -258,9 +259,12 @@ export default function Chat({
             <p className="chat-intro">{intro}</p>
           </div>
         </div>
-        <button type="button" className="ghost" onClick={logout}>
-          Wyjdź
-        </button>
+        <div className="header-actions">
+          <ThemeToggle />
+          <button type="button" className="ghost" onClick={logout}>
+            Wyjdź
+          </button>
+        </div>
       </header>
 
       <div className="messages">

@@ -361,6 +361,62 @@ h2 {
   background: var(--assistant-bg);
 }
 
+.profile-page {
+  max-width: 900px;
+  max-height: calc(100dvh - 48px);
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.profile-content {
+  display: grid;
+  gap: 14px;
+  padding: 24px 28px;
+  overflow-y: auto;
+}
+
+.profile-content h2 {
+  margin: 4px 0 -4px;
+}
+
+.profile-name,
+.profile-preference label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.profile-preference {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--assistant-bg);
+}
+
+.profile-remove {
+  color: var(--error) !important;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 4px;
+}
+
+.profile-notice {
+  margin: 0;
+  color: var(--accent-dark);
+}
+
 .history-item:hover {
   border-color: var(--hover-border);
   background: var(--accent-soft);

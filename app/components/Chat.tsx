@@ -209,6 +209,7 @@ export default function Chat({
   const conversationId = useRef<string | null>(null);
   const [conversationLoading, setConversationLoading] = useState(true);
   const [conversationError, setConversationError] = useState("");
+  const [profileName, setProfileName] = useState("");
   const stopRequestedByUser = useRef(false);
   const [interruptedMessages, setInterruptedMessages] = useState<Set<string>>(() => new Set());
   const transport = useMemo(() => new DefaultChatTransport<AgentMessage>({
@@ -249,15 +250,33 @@ export default function Chat({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(requestedConversationId
-      ? `/api/conversations?id=${encodeURIComponent(requestedConversationId)}`
-      : "/api/conversations")
-      .then(async (response) => {
+    Promise.all([
+      fetch(requestedConversationId
+        ? `/api/conversations?id=${encodeURIComponent(requestedConversationId)}`
+        : "/api/conversations").then(async (response) => {
+          const data = await response.json();
+          if (!response.ok) throw new Error(data?.error ?? "Nie udało się wczytać rozmowy.");
+          return data;
+        }),
+      fetch("/api/profile").then(async (response) => {
         const data = await response.json();
-        if (!response.ok) throw new Error(data?.error ?? "Nie udało się wczytać rozmowy.");
+        if (!response.ok) throw new Error(data?.error ?? "Nie udało się wczytać profilu.");
+        return data.profile as { name?: string };
+      }),
+    ])
+      .then(([conversationData, profile]) => {
         if (cancelled) return;
-        conversationId.current = data.conversation?.id == null ? null : String(data.conversation.id);
-        setMessages((data.messages ?? []) as AgentMessage[]);
+        const name = profile.name?.trim() ?? "";
+        setProfileName(name);
+        conversationId.current = conversationData.conversation?.id == null ? null : String(conversationData.conversation.id);
+        const loaded = (conversationData.messages ?? []) as AgentMessage[];
+        setMessages(loaded.length ? loaded : [{
+          id: `welcome-${conversationData.conversation?.id ?? "new"}`,
+          role: "assistant",
+          parts: [{ type: "text", text: name
+            ? `Cześć, ${name}! Miło Cię widzieć. W czym mogę pomóc w sprawach Studio Nova?`
+            : "Cześć! Chętnie pomogę w sprawach Studio Nova. Jak mam się do Ciebie zwracać?" }],
+        }]);
       })
       .catch((loadError: unknown) => {
         if (!cancelled) setConversationError(loadError instanceof Error ? loadError.message : "Nie udało się wczytać rozmowy.");
@@ -304,7 +323,13 @@ export default function Chat({
       const data = await response.json();
       if (!response.ok || !data.conversation?.id) throw new Error(data?.error ?? "Nie udało się utworzyć rozmowy.");
       conversationId.current = String(data.conversation.id);
-      setMessages([]);
+      setMessages([{
+        id: `welcome-${String(data.conversation.id)}`,
+        role: "assistant",
+        parts: [{ type: "text", text: profileName
+          ? `Cześć, ${profileName}! Miło Cię widzieć. W czym mogę pomóc w sprawach Studio Nova?`
+          : "Cześć! Chętnie pomogę w sprawach Studio Nova. Jak mam się do Ciebie zwracać?" }],
+      }]);
       setImages([]);
       setAnalysis(null);
       setAnalysisError("");
@@ -409,6 +434,7 @@ export default function Chat({
             Nowa rozmowa
           </button>
           <Link href="/history" className="header-link">Historia</Link>
+          <Link href="/profile" className="header-link">Profil</Link>
           <Link href="/dashboard" className="header-link">Podróż</Link>
           <ThemeToggle />
           <button type="button" className="ghost" onClick={logout}>

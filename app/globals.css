@@ -311,6 +311,47 @@ h2 {
   overflow: hidden;
 }
 
+.history-page {
+  max-width: 900px;
+  max-height: calc(100dvh - 48px);
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+  padding: 20px 28px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: grid;
+  gap: 3px;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.history-item:hover {
+  border-color: var(--hover-border);
+  background: var(--accent-soft);
+}
+
+.history-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item .small {
+  color: var(--muted);
+}
+
 .chat-header {
   min-height: 94px;
   display: flex;

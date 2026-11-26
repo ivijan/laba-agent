@@ -198,10 +198,12 @@ export default function Chat({
   botName,
   intro,
   imageSuggestions,
+  requestedConversationId,
 }: {
   botName: string;
   intro: string;
   imageSuggestions: string[];
+  requestedConversationId?: string;
 }) {
   const router = useRouter();
   const conversationId = useRef<string | null>(null);
@@ -247,7 +249,9 @@ export default function Chat({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/conversations")
+    fetch(requestedConversationId
+      ? `/api/conversations?id=${encodeURIComponent(requestedConversationId)}`
+      : "/api/conversations")
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data?.error ?? "Nie udało się wczytać rozmowy.");
@@ -262,7 +266,7 @@ export default function Chat({
         if (!cancelled) setConversationLoading(false);
       });
     return () => { cancelled = true; };
-  }, [setMessages]);
+  }, [requestedConversationId, setMessages]);
 
   // Gdy coś trwa, blokujemy przyciski, żeby nie wysłać zlecenia dwa razy.
   const busy = status === "submitted" || status === "streaming" || generating || conversationLoading;
@@ -404,6 +408,7 @@ export default function Chat({
           <button type="button" className="ghost" onClick={newConversation} disabled={busy}>
             Nowa rozmowa
           </button>
+          <Link href="/history" className="header-link">Historia</Link>
           <Link href="/dashboard" className="header-link">Podróż</Link>
           <ThemeToggle />
           <button type="button" className="ghost" onClick={logout}>

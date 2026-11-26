@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
@@ -38,25 +38,6 @@ const TOOL_LABELS: Record<string, string> = {
 const ALLOWED_IMAGES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_PROMPT = 500;
-
-// Rozmowa idzie do /api/agent w trybie "chat". Wygenerowanych obrazów nie odsyłamy
-// z powrotem na serwer — są duże, a modelowi wystarcza informacja, że obraz powstał.
-const transport = new DefaultChatTransport<AgentMessage>({
-  api: "/api/agent",
-  prepareSendMessagesRequest: ({ messages }) => ({
-    body: {
-      mode: "chat",
-      messages: messages.map((message) => ({
-        ...message,
-        parts: message.parts.map((part) =>
-          part.type === "tool-generujObraz" && part.state === "output-available"
-            ? { ...part, output: { model: (part.output as ImageResult).model } }
-            : part,
-        ),
-      })),
-    },
-  }),
-});
 
 // Lista użytych narzędzi, po kolei. Wyszukiwanie wykonuje OpenRouter,
 // więc rozpoznajemy je po źródłach dołączonych do odpowiedzi.
@@ -223,9 +204,29 @@ export default function Chat({
   imageSuggestions: string[];
 }) {
   const router = useRouter();
+  const conversationId = useRef<string | null>(null);
+  const [conversationLoading, setConversationLoading] = useState(true);
+  const [conversationError, setConversationError] = useState("");
   const stopRequestedByUser = useRef(false);
   const [interruptedMessages, setInterruptedMessages] = useState<Set<string>>(() => new Set());
-  const { messages, sendMessage, status, error, stop } = useChat<AgentMessage>({
+  const transport = useMemo(() => new DefaultChatTransport<AgentMessage>({
+    api: "/api/agent",
+    prepareSendMessagesRequest: ({ messages }) => ({
+      body: {
+        mode: "chat",
+        conversationId: conversationId.current,
+        messages: messages.map((message) => ({
+          ...message,
+          parts: message.parts.map((part) =>
+            part.type === "tool-generujObraz" && part.state === "output-available"
+              ? { ...part, output: { model: (part.output as ImageResult).model } }
+              : part,
+          ),
+        })),
+      },
+    }),
+  }), []);
+  const { messages, sendMessage, status, error, stop, setMessages } = useChat<AgentMessage>({
     transport,
     onFinish: ({ message, isAbort }) => {
       if (isAbort && stopRequestedByUser.current) {
@@ -244,16 +245,71 @@ export default function Chat({
   const [analyzing, setAnalyzing] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/conversations")
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error ?? "Nie udało się wczytać rozmowy.");
+        if (cancelled) return;
+        conversationId.current = data.conversation?.id ?? null;
+        setMessages((data.messages ?? []) as AgentMessage[]);
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) setConversationError(loadError instanceof Error ? loadError.message : "Nie udało się wczytać rozmowy.");
+      })
+      .finally(() => {
+        if (!cancelled) setConversationLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [setMessages]);
+
   // Gdy coś trwa, blokujemy przyciski, żeby nie wysłać zlecenia dwa razy.
-  const busy = status === "submitted" || status === "streaming" || generating;
+  const busy = status === "submitted" || status === "streaming" || generating || conversationLoading;
   const text = input.trim();
 
-  function send(event: React.FormEvent) {
+  async function send(event: React.FormEvent) {
     event.preventDefault();
     if (busy || (!text && !photo)) return;
+    setConversationError("");
+    if (!conversationId.current) {
+      setConversationLoading(true);
+      try {
+        const response = await fetch("/api/conversations", { method: "POST" });
+        const data = await response.json();
+        if (!response.ok || !data.conversation?.id) throw new Error(data?.error ?? "Nie udało się utworzyć rozmowy.");
+        conversationId.current = data.conversation.id;
+      } catch (createError) {
+        setConversationError(createError instanceof Error ? createError.message : "Nie udało się utworzyć rozmowy.");
+        setConversationLoading(false);
+        return;
+      }
+      setConversationLoading(false);
+    }
     sendMessage({ text: text || "Opisz to zdjęcie.", files: photo ? [photo] : undefined });
     setInput("");
     setPhoto(null);
+  }
+
+  async function newConversation() {
+    if (busy) return;
+    setConversationError("");
+    setConversationLoading(true);
+    try {
+      const response = await fetch("/api/conversations", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok || !data.conversation?.id) throw new Error(data?.error ?? "Nie udało się utworzyć rozmowy.");
+      conversationId.current = data.conversation.id;
+      setMessages([]);
+      setImages([]);
+      setAnalysis(null);
+      setAnalysisError("");
+      setInterruptedMessages(new Set());
+    } catch (createError) {
+      setConversationError(createError instanceof Error ? createError.message : "Nie udało się utworzyć rozmowy.");
+    } finally {
+      setConversationLoading(false);
+    }
   }
 
   function stopAgent() {
@@ -345,6 +401,9 @@ export default function Chat({
           </div>
         </div>
         <div className="header-actions">
+          <button type="button" className="ghost" onClick={newConversation} disabled={busy}>
+            Nowa rozmowa
+          </button>
           <Link href="/dashboard" className="header-link">Podróż</Link>
           <ThemeToggle />
           <button type="button" className="ghost" onClick={logout}>
@@ -354,6 +413,8 @@ export default function Chat({
       </header>
 
       <div className="messages">
+        {conversationLoading && <p className="muted">Wczytuję rozmowę…</p>}
+        {conversationError && <p className="error">{conversationError}</p>}
         {imagesAfter(0)}
         {messages.map((message, index) => (
           <div key={message.id} className="turn">

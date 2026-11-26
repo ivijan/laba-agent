@@ -11,6 +11,7 @@ import {
 import { chatModel, isModelConfigured } from "@/lib/model";
 import { ANALYSIS_INSTRUCTIONS, INSTRUCTIONS, analysisSchema } from "@/lib/persona";
 import { hasSession } from "@/lib/session";
+import { getSupabase } from "@/lib/supabase";
 import {
   MAX_STEPS,
   MAX_TASK_DURATION_MS,
@@ -38,15 +39,53 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => null);
-  if (body?.mode === "chat") return chat(body.messages);
+  if (body?.mode === "chat") return chat(body.messages, body.conversationId);
   if (body?.mode === "analyze") return analyze(body.text);
   return Response.json({ error: 'Nieznany tryb. Użyj mode: "chat" albo "analyze".' }, { status: 400 });
 }
 
-async function chat(messages: UIMessage[] | undefined) {
+async function chat(messages: UIMessage[] | undefined, conversationId: unknown) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return Response.json({ error: "Brak wiadomości." }, { status: 400 });
   }
+
+  if (typeof conversationId !== "string" || !/^[0-9a-f-]{36}$/i.test(conversationId)) {
+    return Response.json({ error: "Brak prawidłowej rozmowy." }, { status: 400 });
+  }
+
+  const userMessage = messages.at(-1);
+  if (!userMessage || userMessage.role !== "user") {
+    return Response.json({ error: "Ostatnia wiadomość musi pochodzić od użytkownika." }, { status: 400 });
+  }
+
+  const supabase = getSupabase();
+  const { data: conversation, error: conversationError } = await supabase
+    .from("conversations")
+    .select("id, title")
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (conversationError) {
+    console.error("Nie udało się sprawdzić rozmowy:", conversationError);
+    return Response.json({ error: "Nie udało się wczytać rozmowy z bazy." }, { status: 500 });
+  }
+  if (!conversation) return Response.json({ error: "Nie znaleziono rozmowy." }, { status: 404 });
+
+  const { data: savedMessages, error: savedMessagesError } = await supabase
+    .from("messages")
+    .select("id, role, content")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true });
+  if (savedMessagesError) {
+    console.error("Nie udało się wczytać wiadomości:", savedMessagesError);
+    return Response.json({ error: "Nie udało się wczytać rozmowy z bazy." }, { status: 500 });
+  }
+
+  const userContent = userMessage.parts.map((part) => {
+    if (part.type === "text") return part.text;
+    if (part.type === "file" && part.mediaType.startsWith("image/")) return "[obraz]";
+    return "";
+  }).filter(Boolean).join("\n").trim();
+  if (!userContent) return Response.json({ error: "Wiadomość jest pusta." }, { status: 400 });
 
   // Zdjęcia od użytkownika: przepuszczamy tylko jpg, png i webp.
   const badFile = messages.some(
@@ -70,7 +109,14 @@ async function chat(messages: UIMessage[] | undefined) {
   const result = streamText({
     model: chatModel(),
     instructions: INSTRUCTIONS,
-    messages: await convertToModelMessages(messages, { tools: taskTools }),
+    messages: await convertToModelMessages([
+      ...(savedMessages ?? []).map((saved) => ({
+        id: saved.id,
+        role: saved.role as "user" | "assistant",
+        parts: [{ type: "text" as const, text: saved.content }],
+      })),
+      userMessage,
+    ], { tools: taskTools }),
     tools: taskTools,
     stopWhen: [
       isStepCount(MAX_STEPS),
@@ -116,9 +162,48 @@ async function chat(messages: UIMessage[] | undefined) {
   return createUIMessageStreamResponse({
     stream: toUIMessageStream<typeof taskTools, UIMessage<AgentMetadata>>({
       stream: result.stream,
+      originalMessages: messages as UIMessage<AgentMetadata>[],
       tools: taskTools,
       sendSources: true,
       onError: () => "Model nie odpowiedział. Spróbuj ponownie za chwilę.",
+      onEnd: async ({ responseMessage, outcome, isAborted, isCancelled }) => {
+        if (outcome.status !== "completed" || isAborted || isCancelled) return;
+        const answer = responseMessage.parts
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n")
+          .trim();
+        const assistantMessageId = `assistant:${userMessage.id}`;
+        const insertedAt = new Date();
+        const { error: saveError } = await supabase.from("messages").upsert([
+          {
+            id: userMessage.id,
+            conversation_id: conversationId,
+            role: "user",
+            content: userContent,
+            created_at: insertedAt.toISOString(),
+          },
+          {
+            id: assistantMessageId,
+            conversation_id: conversationId,
+            role: "assistant",
+            content: answer || "(brak tekstowej odpowiedzi)",
+            created_at: new Date(insertedAt.getTime() + 1).toISOString(),
+          },
+        ], { onConflict: "id", ignoreDuplicates: true });
+
+        if (saveError) {
+          console.error("Nie udało się zapisać wiadomości:", saveError);
+          return;
+        }
+        if (!(savedMessages?.length)) {
+          const { error: titleError } = await supabase
+            .from("conversations")
+            .update({ title: userContent.slice(0, 80) })
+            .eq("id", conversationId);
+          if (titleError) console.error("Nie udało się ustawić tytułu rozmowy:", titleError);
+        }
+      },
       messageMetadata: ({ part }) => {
         if (part.type === "finish-step") {
           stepCount += 1;

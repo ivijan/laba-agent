@@ -29,7 +29,7 @@ export async function GET() {
     return Response.json({
       conversation,
       messages: (rows ?? []).map((row) => ({
-        id: row.id,
+        id: String(row.id),
         role: row.role,
         parts: [{ type: "text", text: row.content }],
       })),

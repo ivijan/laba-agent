@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   Output,
   convertToModelMessages,
@@ -25,6 +26,14 @@ export const maxDuration = 60;
 
 const ALLOWED_IMAGES = ["image/jpeg", "image/png", "image/webp"];
 
+function stableMessageId(conversationId: string, requestMessageId: string, role: "user" | "assistant") {
+  const hash = createHash("sha256")
+    .update(`${conversationId}:${requestMessageId}:${role}`)
+    .digest("hex")
+    .slice(0, 16);
+  return (BigInt(`0x${hash}`) & BigInt("0x7fffffffffffffff")).toString();
+}
+
 // Jeden endpoint agenta. Pole mode wybiera sposób pracy:
 // - "chat": rozmowa na żywo z narzędziami,
 // - "analyze": wynik w ustalonym kształcie (JSON).
@@ -49,7 +58,11 @@ async function chat(messages: UIMessage[] | undefined, conversationId: unknown) 
     return Response.json({ error: "Brak wiadomości." }, { status: 400 });
   }
 
-  if (typeof conversationId !== "string" || !/^[0-9a-f-]{36}$/i.test(conversationId)) {
+  const conversationKey =
+    typeof conversationId === "string" || typeof conversationId === "number"
+      ? String(conversationId)
+      : "";
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(conversationKey)) {
     return Response.json({ error: "Brak prawidłowej rozmowy." }, { status: 400 });
   }
 
@@ -62,7 +75,7 @@ async function chat(messages: UIMessage[] | undefined, conversationId: unknown) 
   const { data: conversation, error: conversationError } = await supabase
     .from("conversations")
     .select("id, title")
-    .eq("id", conversationId)
+    .eq("id", conversationKey)
     .maybeSingle();
   if (conversationError) {
     console.error("Nie udało się sprawdzić rozmowy:", conversationError);
@@ -73,7 +86,7 @@ async function chat(messages: UIMessage[] | undefined, conversationId: unknown) 
   const { data: savedMessages, error: savedMessagesError } = await supabase
     .from("messages")
     .select("id, role, content")
-    .eq("conversation_id", conversationId)
+    .eq("conversation_id", conversationKey)
     .order("created_at", { ascending: true });
   if (savedMessagesError) {
     console.error("Nie udało się wczytać wiadomości:", savedMessagesError);
@@ -173,19 +186,19 @@ async function chat(messages: UIMessage[] | undefined, conversationId: unknown) 
           .map((part) => part.text)
           .join("\n")
           .trim();
-        const assistantMessageId = `assistant:${userMessage.id}`;
+        const assistantMessageId = stableMessageId(conversationKey, userMessage.id, "assistant");
         const insertedAt = new Date();
         const { error: saveError } = await supabase.from("messages").upsert([
           {
-            id: userMessage.id,
-            conversation_id: conversationId,
+            id: stableMessageId(conversationKey, userMessage.id, "user"),
+            conversation_id: conversationKey,
             role: "user",
             content: userContent,
             created_at: insertedAt.toISOString(),
           },
           {
             id: assistantMessageId,
-            conversation_id: conversationId,
+            conversation_id: conversationKey,
             role: "assistant",
             content: answer || "(brak tekstowej odpowiedzi)",
             created_at: new Date(insertedAt.getTime() + 1).toISOString(),
@@ -200,7 +213,7 @@ async function chat(messages: UIMessage[] | undefined, conversationId: unknown) 
           const { error: titleError } = await supabase
             .from("conversations")
             .update({ title: userContent.slice(0, 80) })
-            .eq("id", conversationId);
+            .eq("id", conversationKey);
           if (titleError) console.error("Nie udało się ustawić tytułu rozmowy:", titleError);
         }
       },

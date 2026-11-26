@@ -252,7 +252,7 @@ export default function Chat({
         const data = await response.json();
         if (!response.ok) throw new Error(data?.error ?? "Nie udało się wczytać rozmowy.");
         if (cancelled) return;
-        conversationId.current = data.conversation?.id ?? null;
+        conversationId.current = data.conversation?.id == null ? null : String(data.conversation.id);
         setMessages((data.messages ?? []) as AgentMessage[]);
       })
       .catch((loadError: unknown) => {
@@ -278,7 +278,7 @@ export default function Chat({
         const response = await fetch("/api/conversations", { method: "POST" });
         const data = await response.json();
         if (!response.ok || !data.conversation?.id) throw new Error(data?.error ?? "Nie udało się utworzyć rozmowy.");
-        conversationId.current = data.conversation.id;
+        conversationId.current = String(data.conversation.id);
       } catch (createError) {
         setConversationError(createError instanceof Error ? createError.message : "Nie udało się utworzyć rozmowy.");
         setConversationLoading(false);
@@ -299,7 +299,7 @@ export default function Chat({
       const response = await fetch("/api/conversations", { method: "POST" });
       const data = await response.json();
       if (!response.ok || !data.conversation?.id) throw new Error(data?.error ?? "Nie udało się utworzyć rozmowy.");
-      conversationId.current = data.conversation.id;
+      conversationId.current = String(data.conversation.id);
       setMessages([]);
       setImages([]);
       setAnalysis(null);

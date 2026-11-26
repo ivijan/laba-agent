@@ -10,7 +10,7 @@ import {
   type UIMessage,
 } from "ai";
 import { chatModel, isModelConfigured } from "@/lib/model";
-import { ANALYSIS_INSTRUCTIONS, INSTRUCTIONS, analysisSchema } from "@/lib/persona";
+import { ANALYSIS_INSTRUCTIONS, INSTRUCTIONS, SYSTEM_PROMPT, analysisSchema } from "@/lib/persona";
 import { hasSession } from "@/lib/session";
 import { getSupabase } from "@/lib/supabase";
 import {
@@ -210,10 +210,23 @@ async function chat(messages: UIMessage[] | undefined, conversationId: unknown) 
           return;
         }
         if (!(savedMessages?.length)) {
+          let title = "Rozmowa ze Studio Nova";
+          try {
+            const generated = await generateText({
+              model: chatModel(),
+              instructions: `${SYSTEM_PROMPT}\n\nNadaj tej rozmowie krótki tytuł po polsku: dokładnie 3–5 słów, bez cudzysłowów i kropki. Oprzyj go na wiadomości klienta i swojej odpowiedzi. Zwróć wyłącznie tytuł.`,
+              prompt: `Wiadomość klienta: ${userContent}\nOdpowiedź agenta: ${answer}`,
+            });
+            const candidate = generated.text.trim().replace(/["'“”„.]+/g, "").replace(/\s+/g, " ");
+            if (candidate.split(" ").length >= 3 && candidate.split(" ").length <= 5) title = candidate;
+          } catch (titleGenerationError) {
+            console.error("Nie udało się nadać tytułu rozmowie:", titleGenerationError);
+          }
           const { error: titleError } = await supabase
             .from("conversations")
-            .update({ title: userContent.slice(0, 80) })
-            .eq("id", conversationKey);
+            .update({ title })
+            .eq("id", conversationKey)
+            .eq("title", "Nowa rozmowa");
           if (titleError) console.error("Nie udało się ustawić tytułu rozmowy:", titleError);
         }
       },

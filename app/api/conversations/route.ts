@@ -85,3 +85,27 @@ export async function POST() {
     return Response.json({ error: "Nie udało się utworzyć rozmowy w bazie." }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  if (!(await hasSession())) {
+    return Response.json({ error: "Brak dostępu. Zaloguj się hasłem." }, { status: 401 });
+  }
+
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
+    return Response.json({ error: "Brak prawidłowej rozmowy." }, { status: 400 });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const { error: messageError } = await supabase.from("messages").delete().eq("conversation_id", id);
+    if (messageError) throw messageError;
+    const { data, error } = await supabase.from("conversations").delete().eq("id", id).select("id");
+    if (error) throw error;
+    if (!data?.length) return Response.json({ error: "Nie znaleziono rozmowy." }, { status: 404 });
+    return Response.json({ deleted: true });
+  } catch (error) {
+    console.error("Nie udało się usunąć rozmowy:", error);
+    return Response.json({ error: "Nie udało się usunąć rozmowy z bazy." }, { status: 500 });
+  }
+}

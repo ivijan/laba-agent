@@ -11,6 +11,9 @@ export const BOT_NAME = "Asystent Studio Nova";
 export const BOT_INTRO =
   "Cześć! Pomagam klientom Studio Nova. Zapytaj o ofertę, terminy albo płatności.";
 
+export const HISTORY_EMPTY_MESSAGE =
+  "Cześć! Chętnie pomogę Ci ze stroną internetową, identyfikacją wizualną albo sprawą związaną ze Studio Nova. Rozpocznijmy pierwszą rozmowę.";
+
 export const SYSTEM_PROMPT = `
 Jesteś asystentem Studio Nova — małego studia, które projektuje strony internetowe i identyfikację wizualną.
 

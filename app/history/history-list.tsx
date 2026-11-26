@@ -7,12 +7,13 @@ import { ThemeToggle } from "../components/ThemeProvider";
 
 type Conversation = { id: string | number; title: string | null; created_at: string; messageCount: number };
 
-export default function HistoryList({ botName }: { botName: string }) {
+export default function HistoryList({ botName, emptyMessage }: { botName: string; emptyMessage: string }) {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +41,23 @@ export default function HistoryList({ botName }: { botName: string }) {
     }
   }
 
+  async function deleteConversation(conversation: Conversation) {
+    if (!window.confirm(`Usunąć rozmowę „${conversation.title || "Nowa rozmowa"}”? Tej czynności nie można cofnąć.`)) return;
+    const id = String(conversation.id);
+    setDeleting(id);
+    setError("");
+    try {
+      const response = await fetch(`/api/conversations?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error ?? "Nie udało się usunąć rozmowy.");
+      setConversations((previous) => previous.filter((item) => String(item.id) !== id));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się usunąć rozmowy.");
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   return (
     <section className="card history-page">
       <header className="chat-header">
@@ -53,12 +71,17 @@ export default function HistoryList({ botName }: { botName: string }) {
       <div className="history-list">
         {loading && <p className="muted">Wczytuję historię…</p>}
         {error && <p className="error">{error}</p>}
-        {!loading && !error && conversations.length === 0 && <p className="muted">Nie ma jeszcze zapisanych rozmów.</p>}
+        {!loading && !error && conversations.length === 0 && <p className="history-empty">{emptyMessage}</p>}
         {conversations.map((conversation) => (
-          <Link className="history-item" href={`/?id=${encodeURIComponent(String(conversation.id))}`} key={conversation.id}>
-            <strong>{conversation.title?.trim() || "Nowa rozmowa"}</strong>
-            <span className="small">{new Date(conversation.created_at).toLocaleString("pl-PL", { dateStyle: "medium", timeStyle: "short" })} · {conversation.messageCount} wiadomości</span>
-          </Link>
+          <div className="history-row" key={conversation.id}>
+            <Link className="history-item" href={`/?id=${encodeURIComponent(String(conversation.id))}`}>
+              <strong>{conversation.title?.trim() || "Nowa rozmowa"}</strong>
+              <span className="small">{new Date(conversation.created_at).toLocaleString("pl-PL", { dateStyle: "medium", timeStyle: "short" })} · {conversation.messageCount} wiadomości</span>
+            </Link>
+            <button type="button" className="ghost history-delete" onClick={() => deleteConversation(conversation)} disabled={deleting !== null}>
+              {deleting === String(conversation.id) ? "Usuwam…" : "Usuń"}
+            </button>
+          </div>
         ))}
       </div>
     </section>

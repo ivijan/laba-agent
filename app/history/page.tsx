@@ -1,13 +1,13 @@
 import { connection } from "next/server";
 import { hasSession } from "@/lib/session";
-import { BOT_NAME } from "@/lib/persona";
+import { BOT_NAME, HISTORY_EMPTY_MESSAGE } from "@/lib/persona";
 import Login from "../components/Login";
 import HistoryList from "./history-list";
 
 async function Gate() {
   await connection();
   const loggedIn = await hasSession();
-  return loggedIn ? <HistoryList botName={BOT_NAME} /> : <Login botName={BOT_NAME} />;
+  return loggedIn ? <HistoryList botName={BOT_NAME} emptyMessage={HISTORY_EMPTY_MESSAGE} /> : <Login botName={BOT_NAME} />;
 }
 
 export default function HistoryPage() {

@@ -21,6 +21,7 @@ const TOOL_NAMES = [
   "notatki",
   "diagnostyka",
   "generujObraz",
+  "zapiszProfil",
 ] as const;
 
 export type ImageResult = {
@@ -577,10 +578,26 @@ export async function runTravelTool<T = unknown>(name: TravelToolName, input: un
   return await definition.execute(parsedInput) as T;
 }
 
-export function createTaskAgentTools(counter: { count: number }) {
+export function createTaskAgentTools(
+  counter: { count: number },
+  saveProfile: (input: { name?: string; facts: Record<string, string> }) => Promise<unknown>,
+) {
+  const zapiszProfil = tool({
+    description:
+      "Zapisuje trwałą informację o użytkowniku wyłącznie wtedy, gdy mówi o sobie wprost i bezpośrednio jako o fakcie. " +
+      "Zapisz imię w polu name, a inne nieszkodliwe fakty (np. miasto, ulubione jedzenie, preferowany styl odpowiedzi) jako pary klucz–wartość w facts. " +
+      "Nie zapisuj domysłów, planów, żartów ani cudzych informacji. Nigdy nie zapisuj haseł, kluczy, sekretów, danych finansowych, zdrowotnych ani innych wrażliwych danych. " +
+      "Nowe fakty dopisują się do istniejących. Po udanym zapisie krótko powiedz użytkownikowi, co zapamiętałeś.",
+    inputSchema: z.object({
+      name: z.string().trim().min(1).max(100).optional().describe("Imię użytkownika podane wprost, nie zgaduj"),
+      facts: z.record(z.string(), z.string().trim().min(1).max(300)).default({})
+        .describe("Nieszkodliwe fakty o użytkowniku jako pary klucz–wartość, np. miasto: Gdańsk"),
+    }),
+    execute: saveProfile,
+  });
   const localToolNames = new Set<string>();
   const tools = Object.fromEntries(
-    Object.entries(agentTools).map(([name, definition]) => {
+    Object.entries({ ...agentTools, zapiszProfil }).map(([name, definition]) => {
       const executable = definition as unknown as {
         execute?: (...args: unknown[]) => Promise<unknown>;
       };
